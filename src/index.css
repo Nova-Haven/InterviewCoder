@@ -4,8 +4,14 @@
 
 /* Custom animations for UI elements */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translate(-50%, -48%); }
-  to { opacity: 0.98; transform: translate(-50%, -50%); }
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%);
+  }
+  to {
+    opacity: 0.98;
+    transform: translate(-50%, -50%);
+  }
 }
 
 /* Dialog transition improvements */

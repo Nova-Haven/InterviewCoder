@@ -1,20 +1,20 @@
 {
-  "name": "interview-coder-v1",
+  "name": "code-interview-assist-v1",
   "version": "1.0.19",
   "main": "./dist-electron/main.js",
   "scripts": {
     "clean": "rimraf dist dist-electron",
-    "dev": "cross-env NODE_ENV=development npm run clean && concurrently \"tsc -w -p tsconfig.electron.json\" \"vite\" \"wait-on -t 30000 http://localhost:54321 && electron ./dist-electron/main.js\"",
-    "start": "cross-env NODE_ENV=development concurrently \"tsc -p tsconfig.electron.json\" \"vite\" \"wait-on -t 30000 http://localhost:54321 && electron ./dist-electron/main.js\"",
-    "build": "cross-env NODE_ENV=production rimraf dist dist-electron && vite build && tsc -p tsconfig.electron.json",
-    "run-prod": "cross-env NODE_ENV=production electron ./dist-electron/main.js",
+    "dev": "bun run clean && concurrently \"tsc -w -p tsconfig.electron.json\" \"vite\"",
+    "start": "concurrently \"tsc -p tsconfig.electron.json\" \"vite\"",
+    "build": "rimraf dist dist-electron && vite build && tsc -p tsconfig.electron.json",
+    "run-prod": "electron ./dist-electron/main.js",
     "package": "yarn build && electron-builder build",
     "package-mac": "yarn build && electron-builder build --mac",
     "package-win": "yarn build && electron-builder build --win"
   },
   "build": {
-    "appId": "com.chunginlee.interviewcoder",
-    "productName": "Interview Coder",
+    "appId": "com.cia.codeinterviewassist",
+    "productName": "CodeInterviewAssist",
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
@@ -27,7 +27,6 @@
     },
     "asar": true,
     "compression": "maximum",
-    "generateUpdatesFilesForAllChannels": true,
     "mac": {
       "category": "public.app-category.developer-tools",
       "target": [
@@ -96,27 +95,25 @@
         "releaseType": "release"
       }
     ],
-    "extraResources": [
-      {
-        "from": ".env",
-        "to": ".env",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
     "extraMetadata": {
       "main": "dist-electron/main.js"
     }
   },
-  "keywords": ["interview", "coding", "interview prep", "technical interview", "tool"],
-  "author": "Interview Coder Contributors",
+  "keywords": [
+    "interview",
+    "coding",
+    "interview prep",
+    "technical interview",
+    "tool"
+  ],
+  "author": "CodeInterviewAssist Contributors",
   "license": "AGPL-3.0-or-later",
   "description": "An invisible desktop application to help you pass your technical interviews.",
   "dependencies": {
     "@electron/notarize": "^2.3.0",
     "@emotion/react": "^11.11.0",
     "@emotion/styled": "^11.11.0",
+    "@google/generative-ai": "^0.24.0",
     "@radix-ui/react-dialog": "^1.1.2",
     "@radix-ui/react-label": "^2.1.0",
     "@radix-ui/react-slot": "^1.1.0",
@@ -126,10 +123,8 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "diff": "^7.0.0",
-    "dotenv": "^16.4.7",
     "electron-log": "^5.2.4",
     "electron-store": "^10.0.0",
-    "electron-updater": "^6.3.9",
     "form-data": "^4.0.1",
     "lucide-react": "^0.460.0",
     "openai": "^4.28.4",
@@ -158,7 +153,6 @@
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.20",
     "concurrently": "^8.2.2",
-    "cross-env": "^7.0.3",
     "electron": "^29.1.4",
     "electron-builder": "^24.13.3",
     "electron-is-dev": "^3.0.1",

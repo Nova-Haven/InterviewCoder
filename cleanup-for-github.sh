@@ -16,9 +16,6 @@ rm -rf release
 echo "Removing package-lock.json..."
 rm -f package-lock.json
 
-echo "Removing any .env files..."
-rm -f .env .env.local .env.development .env.production
-
 echo "Cleanup complete!"
 echo "Ready to commit to GitHub."
 echo "Run 'npm install' after cloning to install dependencies."

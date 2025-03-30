@@ -16,12 +16,6 @@ if exist release rmdir /s /q release
 echo Removing package-lock.json...
 if exist package-lock.json del package-lock.json
 
-echo Removing any .env files...
-if exist .env del .env
-if exist .env.local del .env.local
-if exist .env.development del .env.development
-if exist .env.production del .env.production
-
 echo Cleanup complete!
 echo Ready to commit to GitHub.
 echo Run 'npm install' after cloning to install dependencies.

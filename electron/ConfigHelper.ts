@@ -1,15 +1,18 @@
 // ConfigHelper.ts
-import fs from "node:fs"
-import path from "node:path"
-import { app } from "electron"
-import { EventEmitter } from "events"
-import { OpenAI } from "openai"
+import fs from "node:fs";
+import path from "node:path";
+import { app } from "electron";
+import { EventEmitter } from "events";
+import { OpenAI } from "openai";
 
 interface Config {
+  modelProvider: string; // 'openai', 'gemini', or 'ollama'
   apiKey: string;
+  geminiApiKey: string;
   extractionModel: string;
   solutionModel: string;
   debuggingModel: string;
+  ollamaUrl: string;
   language: string;
   opacity: number;
 }
@@ -17,25 +20,28 @@ interface Config {
 export class ConfigHelper extends EventEmitter {
   private configPath: string;
   private defaultConfig: Config = {
+    modelProvider: "openai", // 'openai', 'gemini', or 'ollama'
     apiKey: "",
+    geminiApiKey: "",
     extractionModel: "gpt-4o",
     solutionModel: "gpt-4o",
     debuggingModel: "gpt-4o",
-    language: "python",
-    opacity: 1.0
+    ollamaUrl: "localhost:11434/api",
+    language: "javascript",
+    opacity: 1.0,
   };
 
   constructor() {
     super();
     // Use the app's user data directory to store the config
     try {
-      this.configPath = path.join(app.getPath('userData'), 'config.json');
-      console.log('Config path:', this.configPath);
+      this.configPath = path.join(app.getPath("userData"), "config.json");
+      console.log("Config path:", this.configPath);
     } catch (err) {
-      console.warn('Could not access user data path, using fallback');
-      this.configPath = path.join(process.cwd(), 'config.json');
+      console.warn("Could not access user data path, using fallback");
+      this.configPath = path.join(process.cwd(), "config.json");
     }
-    
+
     // Ensure the initial config file exists
     this.ensureConfigExists();
   }
@@ -56,43 +62,18 @@ export class ConfigHelper extends EventEmitter {
   /**
    * Load the configuration from disk
    */
-  /**
-   * Validate and sanitize model selection to ensure only allowed models are used
-   */
-  private sanitizeModelSelection(model: string): string {
-    // Only allow gpt-4o and gpt-4o-mini
-    const allowedModels = ['gpt-4o', 'gpt-4o-mini'];
-    if (!allowedModels.includes(model)) {
-      // Default to gpt-4o if an invalid model is specified
-      console.warn(`Invalid model specified: ${model}. Using default model: gpt-4o`);
-      return 'gpt-4o';
-    }
-    return model;
-  }
-
   public loadConfig(): Config {
     try {
       if (fs.existsSync(this.configPath)) {
-        const configData = fs.readFileSync(this.configPath, 'utf8');
+        const configData = fs.readFileSync(this.configPath, "utf8");
         const config = JSON.parse(configData);
-        
-        // Sanitize model selections to ensure only allowed models are used
-        if (config.extractionModel) {
-          config.extractionModel = this.sanitizeModelSelection(config.extractionModel);
-        }
-        if (config.solutionModel) {
-          config.solutionModel = this.sanitizeModelSelection(config.solutionModel);
-        }
-        if (config.debuggingModel) {
-          config.debuggingModel = this.sanitizeModelSelection(config.debuggingModel);
-        }
-        
+
         return {
           ...this.defaultConfig,
-          ...config
+          ...config,
         };
       }
-      
+
       // If no config exists, create a default one
       this.saveConfig(this.defaultConfig);
       return this.defaultConfig;
@@ -125,32 +106,24 @@ export class ConfigHelper extends EventEmitter {
   public updateConfig(updates: Partial<Config>): Config {
     try {
       const currentConfig = this.loadConfig();
-      
-      // Sanitize model selections in the updates
-      if (updates.extractionModel) {
-        updates.extractionModel = this.sanitizeModelSelection(updates.extractionModel);
-      }
-      if (updates.solutionModel) {
-        updates.solutionModel = this.sanitizeModelSelection(updates.solutionModel);
-      }
-      if (updates.debuggingModel) {
-        updates.debuggingModel = this.sanitizeModelSelection(updates.debuggingModel);
-      }
-      
       const newConfig = { ...currentConfig, ...updates };
       this.saveConfig(newConfig);
-      
+
       // Only emit update event for changes other than opacity
       // This prevents re-initializing the OpenAI client when only opacity changes
-      if (updates.apiKey !== undefined || updates.extractionModel !== undefined || 
-          updates.solutionModel !== undefined || updates.debuggingModel !== undefined || 
-          updates.language !== undefined) {
-        this.emit('config-updated', newConfig);
+      if (
+        updates.apiKey !== undefined ||
+        updates.extractionModel !== undefined ||
+        updates.solutionModel !== undefined ||
+        updates.debuggingModel !== undefined ||
+        updates.language !== undefined
+      ) {
+        this.emit("config-updated", newConfig);
       }
-      
+
       return newConfig;
     } catch (error) {
-      console.error('Error updating config:', error);
+      console.error("Error updating config:", error);
       return this.defaultConfig;
     }
   }
@@ -160,9 +133,19 @@ export class ConfigHelper extends EventEmitter {
    */
   public hasApiKey(): boolean {
     const config = this.loadConfig();
-    return !!config.apiKey && config.apiKey.trim().length > 0;
+
+    // Check the appropriate key based on provider type
+    if (config.modelProvider === "openai") {
+      return !!config.apiKey && config.apiKey.trim().length > 0;
+    } else if (config.modelProvider === "gemini") {
+      return !!config.geminiApiKey && config.geminiApiKey.trim().length > 0;
+    } else if (config.modelProvider === "ollama") {
+      return !!config.ollamaUrl && config.ollamaUrl.trim().length > 0;
+    }
+
+    return false;
   }
-  
+
   /**
    * Validate the API key format
    */
@@ -170,7 +153,7 @@ export class ConfigHelper extends EventEmitter {
     // Basic format validation for OpenAI API keys
     return /^sk-[a-zA-Z0-9]{32,}$/.test(apiKey.trim());
   }
-  
+
   /**
    * Get the stored opacity value
    */
@@ -186,8 +169,8 @@ export class ConfigHelper extends EventEmitter {
     // Ensure opacity is between 0.1 and 1.0
     const validOpacity = Math.min(1.0, Math.max(0.1, opacity));
     this.updateConfig({ opacity: validOpacity });
-  }  
-  
+  }
+
   /**
    * Get the preferred programming language
    */
@@ -202,32 +185,35 @@ export class ConfigHelper extends EventEmitter {
   public setLanguage(language: string): void {
     this.updateConfig({ language });
   }
-  
+
   /**
    * Test API key with OpenAI
    */
-  public async testApiKey(apiKey: string): Promise<{valid: boolean, error?: string}> {
+  public async testApiKey(
+    apiKey: string
+  ): Promise<{ valid: boolean; error?: string }> {
     try {
       const openai = new OpenAI({ apiKey });
       // Make a simple API call to test the key
       await openai.models.list();
       return { valid: true };
     } catch (error: any) {
-      console.error('API key test failed:', error);
-      
+      console.error("API key test failed:", error);
+
       // Determine the specific error type for better error messages
-      let errorMessage = 'Unknown error validating API key';
-      
+      let errorMessage = "Unknown error validating API key";
+
       if (error.status === 401) {
-        errorMessage = 'Invalid API key. Please check your key and try again.';
+        errorMessage = "Invalid API key. Please check your key and try again.";
       } else if (error.status === 429) {
-        errorMessage = 'Rate limit exceeded. Your API key has reached its request limit or has insufficient quota.';
+        errorMessage =
+          "Rate limit exceeded. Your API key has reached its request limit or has insufficient quota.";
       } else if (error.status === 500) {
-        errorMessage = 'OpenAI server error. Please try again later.';
+        errorMessage = "OpenAI server error. Please try again later.";
       } else if (error.message) {
         errorMessage = `Error: ${error.message}`;
       }
-      
+
       return { valid: false, error: errorMessage };
     }
   }
