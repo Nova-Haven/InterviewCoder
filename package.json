@@ -4,7 +4,9 @@
   "main": "./dist-electron/main.js",
   "scripts": {
     "clean": "rimraf dist dist-electron",
-    "dev": "bun run clean && concurrently \"tsc -w -p tsconfig.electron.json\" \"vite\"",
+    "dev:vite": "vite",
+    "dev:electron": "tsc -w -p tsconfig.electron.json",
+    "dev": "npm run clean && concurrently \"npm run dev:electron\" \"npm run dev:vite\" \"wait-on http://localhost:54321 && electron ./dist-electron/main.js --dev\"",
     "start": "concurrently \"tsc -p tsconfig.electron.json\" \"vite\"",
     "build": "rimraf dist dist-electron && vite build && tsc -p tsconfig.electron.json",
     "run-prod": "electron ./dist-electron/main.js",
@@ -45,7 +47,7 @@
           ]
         }
       ],
-      "artifactName": "Interview-Coder-${arch}.${ext}",
+      "artifactName": "Code-Interview-Assist-${arch}.${ext}",
       "icon": "assets/icons/mac/icon.icns",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
@@ -54,9 +56,9 @@
       "identity": "Developer ID Application",
       "notarize": true,
       "protocols": {
-        "name": "interview-coder-protocol",
+        "name": "code-interview-assist-protocol",
         "schemes": [
-          "interview-coder"
+          "code-interview-assist"
         ]
       }
     },
@@ -67,9 +69,9 @@
       "icon": "assets/icons/win/icon.ico",
       "artifactName": "${productName}-Windows-${version}.${ext}",
       "protocols": {
-        "name": "interview-coder-protocol",
+        "name": "code-interview-assist-protocol",
         "schemes": [
-          "interview-coder"
+          "code-interview-assist"
         ]
       }
     },
@@ -80,17 +82,17 @@
       "icon": "assets/icons/png/icon-256x256.png",
       "artifactName": "${productName}-Linux-${version}.${ext}",
       "protocols": {
-        "name": "interview-coder-protocol",
+        "name": "code-interview-assist-protocol",
         "schemes": [
-          "interview-coder"
+          "code-interview-assist"
         ]
       }
     },
     "publish": [
       {
         "provider": "github",
-        "owner": "ibttf",
-        "repo": "interview-coder",
+        "owner": "Nova-Haven",
+        "repo": "InterviewCoder",
         "private": false,
         "releaseType": "release"
       }
