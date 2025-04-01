@@ -28,7 +28,6 @@ export interface ElectronAPI {
   onProcessingNoScreenshots: (callback: () => void) => () => void;
   onProblemExtracted: (callback: (data: any) => void) => () => void;
   onSolutionSuccess: (callback: (data: any) => void) => () => void;
-  onUnauthorized: (callback: () => void) => () => void;
   onDebugError: (callback: (error: string) => void) => () => void;
   openExternal: (url: string) => void;
   toggleMainWindow: () => Promise<{ success: boolean; error?: string }>;
@@ -48,15 +47,10 @@ export interface ElectronAPI {
   installUpdate: () => void;
   onUpdateAvailable: (callback: (info: any) => void) => () => void;
   onUpdateDownloaded: (callback: (info: any) => void) => () => void;
-
-  decrementCredits: () => Promise<void>;
-  setInitialCredits: (credits: number) => Promise<void>;
-  onCreditsUpdated: (callback: (credits: number) => void) => () => void;
-  onOutOfCredits: (callback: () => void) => () => void;
   openSettingsPortal: () => Promise<void>;
   getPlatform: () => string;
 
-  // New methods for OpenAI integration
+  // New methods for integration of providers
   getConfig: () => Promise<{ apiKey: string; model: string }>;
   updateConfig: (config: {
     apiKey?: string;
@@ -86,7 +80,6 @@ declare global {
         ) => void;
       };
     };
-    __CREDITS__: number;
     __LANGUAGE__: string;
     __IS_INITIALIZED__: boolean;
     __AUTH_TOKEN__?: string | null;

@@ -2,52 +2,113 @@ import { IModelProvider } from "./IModelProvider";
 import { GoogleGenerativeAI, GenerativeModel } from "@google/generative-ai";
 
 export class GeminiProvider implements IModelProvider {
-  private client: GenerativeModel | null = null;
+  private models: {
+    extraction: GenerativeModel | null;
+    solution: GenerativeModel | null;
+    debugging: GenerativeModel | null;
+  } = {
+    extraction: null,
+    solution: null,
+    debugging: null,
+  };
   private genAI: GoogleGenerativeAI | null = null;
+  private config: any = null;
 
   async initialize(config: any): Promise<boolean> {
     try {
       if (!config.geminiApiKey) return false;
 
+      this.config = config;
       this.genAI = new GoogleGenerativeAI(config.geminiApiKey);
 
-      // Use the specified model or fallback to a default
-      const modelName =
-        config.geminiModel || config.extractionModel || "gemini-pro-vision";
+      // Initialize each specialized model
+      const extractionModel = config.extractionModel || "gemini-2.0-flash";
+      const solutionModel = config.solutionModel || "gemini-2.0-flash";
+      const debuggingModel = config.debuggingModel || "gemini-2.0-flash";
 
-      console.log(`Initializing Gemini with model: ${modelName}`);
+      console.log(`Initializing Gemini models:
+        - Extraction: ${extractionModel}
+        - Solution: ${solutionModel}
+        - Debugging: ${debuggingModel}`);
 
-      this.client = this.genAI.getGenerativeModel({
-        model: modelName,
+      // Initialize the specialized models
+      this.models.extraction = this.genAI.getGenerativeModel({
+        model: extractionModel,
+      });
+
+      this.models.solution = this.genAI.getGenerativeModel({
+        model: solutionModel,
+      });
+
+      this.models.debugging = this.genAI.getGenerativeModel({
+        model: debuggingModel,
       });
 
       return true;
     } catch (error) {
-      console.error("Failed to initialize Gemini client:", error);
+      console.error("Failed to initialize Gemini models:", error);
       return false;
     }
   }
 
   isInitialized(): boolean {
-    return this.client !== null;
+    return (
+      this.models.extraction !== null &&
+      this.models.solution !== null &&
+      this.models.debugging !== null
+    );
+  }
+
+  // Helper to get the appropriate model based on the request
+  private getModelForTask(options: any): GenerativeModel {
+    // Default to extraction model if not specified
+    if (!options || !options.model) {
+      return this.models.extraction!;
+    }
+
+    // Map the requested model to our specialized models
+    const modelName = options.model;
+
+    // If the model name matches one of our config models, use the corresponding model
+    if (modelName === this.config.extractionModel) {
+      return this.models.extraction!;
+    } else if (modelName === this.config.solutionModel) {
+      return this.models.solution!;
+    } else if (modelName === this.config.debuggingModel) {
+      return this.models.debugging!;
+    }
+
+    // Default fallback based on the type of task
+    if (options.messages && options.messages.length > 0) {
+      // Check for image content which indicates extraction
+      const firstMessage = options.messages[0];
+      if (Array.isArray(firstMessage.content)) {
+        for (const item of firstMessage.content) {
+          if (item.type === "image_url") {
+            return this.models.extraction!;
+          }
+        }
+      }
+    }
+
+    // Default to solution model if we can't determine
+    return this.models.solution!;
   }
 
   chat = {
     completions: {
       create: async (options: any) => {
-        if (!this.client) {
-          throw new Error("Gemini model not initialized");
+        if (!this.isInitialized()) {
+          throw new Error("Gemini models not initialized");
         }
 
         try {
+          // Get the appropriate model for this task
+          const model = this.getModelForTask(options);
+          console.log(`Using Gemini model: ${(model as any).model}`);
+
           // Extract options that Gemini needs
           const { messages, temperature = 0.7 } = options;
-
-          console.log(
-            "Processing messages for Gemini:",
-            JSON.stringify(messages.slice(0, 1), null, 2),
-            "... and more"
-          );
 
           // Handle different message formats
           const geminiParts: any[] = [];
@@ -100,7 +161,7 @@ export class GeminiProvider implements IModelProvider {
           };
 
           // Generate content
-          const result = await this.client.generateContent({
+          const result = await model.generateContent({
             contents: [{ role: "user", parts: geminiParts }],
             generationConfig: generationConfig,
           });
@@ -127,117 +188,4 @@ export class GeminiProvider implements IModelProvider {
       },
     },
   };
-
-  // Additional methods that aren't currently being used
-  async extractProblemInfo(
-    imageDataList: string[],
-    language: string
-  ): Promise<any> {
-    if (!this.client) {
-      throw new Error("Gemini client not initialized");
-    }
-
-    try {
-      const prompt = `Extract and analyze the coding problem from these images. 
-            Provide the problem description, requirements, and constraints in JSON format.
-            Focus on details relevant for ${language} implementation.`;
-
-      const parts = [
-        { text: prompt },
-        ...imageDataList.map((data) => ({
-          inlineData: {
-            data: data.replace(/^data:image\/(png|jpeg|jpg);base64,/, ""),
-            mimeType: "image/jpeg",
-          },
-        })),
-      ];
-
-      const result = await this.client.generateContent({
-        contents: [{ role: "user", parts }],
-      });
-
-      const response = result.response;
-      const text = response.text();
-
-      try {
-        return JSON.parse(text);
-      } catch {
-        return { description: text };
-      }
-    } catch (error) {
-      console.error("Error extracting problem info:", error);
-      throw new Error("Failed to extract problem information from images");
-    }
-  }
-
-  async generateSolution(problemInfo: any, language: string): Promise<any> {
-    if (!this.client) {
-      throw new Error("Gemini client not initialized");
-    }
-
-    try {
-      const prompt = `Generate a solution for this coding problem:\n${JSON.stringify(
-        problemInfo
-      )}\n\nUse ${language} programming language.`;
-
-      const result = await this.client.generateContent({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-      });
-
-      const response = result.response;
-      return response.text();
-    } catch (error) {
-      console.error("Error generating solution:", error);
-      throw new Error("Failed to generate solution");
-    }
-  }
-
-  async debugSolution(
-    problemInfo: any,
-    imageDataList: string[],
-    language: string
-  ): Promise<any> {
-    if (!this.client) {
-      throw new Error("Gemini client not initialized");
-    }
-
-    try {
-      const prompt = `Debug the coding problem shown in these images.
-                Problem context: ${JSON.stringify(problemInfo)}
-                Programming language: ${language}
-                Analyze the code, identify bugs, and suggest fixes.
-                Provide the response in JSON format with the following structure:
-                {
-                    "bugs": [list of identified issues],
-                    "suggestions": [list of recommended fixes],
-                    "explanation": "detailed explanation"
-                }`;
-
-      const parts = [
-        { text: prompt },
-        ...imageDataList.map((data) => ({
-          inlineData: {
-            data: data.replace(/^data:image\/(png|jpeg|jpg);base64,/, ""),
-            mimeType: "image/jpeg",
-          },
-        })),
-      ];
-
-      const result = await this.client.generateContent({
-        contents: [{ role: "user", parts }],
-      });
-
-      const response = result.response;
-      const text = response.text();
-
-      try {
-        return JSON.parse(text);
-      } catch {
-        return { explanation: text };
-      }
-    } catch (error) {
-      console.error("Error debugging solution:", error);
-      throw new Error("Failed to debug the solution");
-    }
-  }
 }

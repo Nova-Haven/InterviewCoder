@@ -1,5 +1,5 @@
 import { globalShortcut, app } from "electron";
-import { IShortcutsHelperDeps } from "./main";
+import { devTools, isDev, IShortcutsHelperDeps } from "./main";
 import { configHelper } from "./ConfigHelper";
 
 export class ShortcutsHelper {
@@ -81,25 +81,32 @@ export class ShortcutsHelper {
     });
 
     // New shortcuts for moving the window
-    globalShortcut.register("CommandOrControl+Left", () => {
+    globalShortcut.register("CommandOrControl+Alt+Left", () => {
       console.log("Command/Ctrl + Left pressed. Moving window left.");
       this.deps.moveWindowLeft();
     });
 
-    globalShortcut.register("CommandOrControl+Right", () => {
+    globalShortcut.register("CommandOrControl+Alt+Right", () => {
       console.log("Command/Ctrl + Right pressed. Moving window right.");
       this.deps.moveWindowRight();
     });
 
-    globalShortcut.register("CommandOrControl+Down", () => {
+    globalShortcut.register("CommandOrControl++Alt+Down", () => {
       console.log("Command/Ctrl + down pressed. Moving window down.");
       this.deps.moveWindowDown();
     });
 
-    globalShortcut.register("CommandOrControl+Up", () => {
+    globalShortcut.register("CommandOrControl+Alt+Up", () => {
       console.log("Command/Ctrl + Up pressed. Moving window Up.");
       this.deps.moveWindowUp();
     });
+
+    // Register developer mode shortcut (Ctrl+Shift+D or Cmd+Shift+D)
+    if (isDev) {
+      globalShortcut.register("CommandOrControl+Shift+D", () => {
+        devTools();
+      });
+    }
 
     globalShortcut.register("CommandOrControl+B", () => {
       console.log("Command/Ctrl + B pressed. Toggling window visibility.");

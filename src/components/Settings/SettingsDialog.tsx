@@ -36,6 +36,7 @@ export function SettingsDialog({
   const [extractionModel, setExtractionModel] = useState("gpt-4o");
   const [solutionModel, setSolutionModel] = useState("gpt-4o");
   const [debuggingModel, setDebuggingModel] = useState("gpt-4o");
+  const [providerChangedByUser, setProviderChangedByUser] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const { showToast } = useToast();
@@ -55,23 +56,25 @@ export function SettingsDialog({
     }
   };
 
-  // Reset models when provider changes
+  // Only reset models if the provider was changed by user action
   useEffect(() => {
-    // Set default models for the selected provider
-    if (modelProvider === "openai") {
-      setExtractionModel("gpt-4o");
-      setSolutionModel("gpt-4o");
-      setDebuggingModel("gpt-4o");
-    } else if (modelProvider === "gemini") {
-      setExtractionModel("gemini-2.0-flash");
-      setSolutionModel("gemini-pro");
-      setDebuggingModel("gemini-2.0-flash");
-    } else if (modelProvider === "ollama") {
-      setExtractionModel("llama3");
-      setSolutionModel("llama3");
-      setDebuggingModel("llama3");
+    // This prevents resetting during initial load
+    if (providerChangedByUser) {
+      if (modelProvider === "openai") {
+        setExtractionModel("gpt-4o");
+        setSolutionModel("gpt-4o");
+        setDebuggingModel("gpt-4o");
+      } else if (modelProvider === "gemini") {
+        setExtractionModel("gemini-2.0-flash-lite");
+        setSolutionModel("gemini-2.0-flash-lite");
+        setDebuggingModel("gemini-2.0-flash-lite");
+      } else if (modelProvider === "ollama") {
+        setExtractionModel("moondream");
+        setSolutionModel("llama3.2:1b");
+        setDebuggingModel("qwen2.5-coder:3b");
+      }
     }
-  }, [modelProvider]);
+  }, [modelProvider, providerChangedByUser]);
 
   // Load current config on dialog open
   useEffect(() => {
@@ -300,10 +303,16 @@ export function SettingsDialog({
     }
   };
 
+  // Modified provider selection function
+  const handleProviderChange = (provider: ProviderType) => {
+    setModelProvider(provider);
+    setProviderChangedByUser(true);
+  };
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        className="sm:max-w-md bg-black border border-white/10 text-white settings-dialog"
+        className="sm:max-w-md bg-black border border-white/10 text-white settings-dialog clickable"
         style={{
           position: "fixed",
           top: "50%",

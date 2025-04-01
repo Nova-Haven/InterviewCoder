@@ -85,19 +85,6 @@ export class ProcessingHelper {
     throw new Error("App failed to initialize after 5 seconds");
   }
 
-  private async getCredits(): Promise<number> {
-    const mainWindow = this.deps.getMainWindow();
-    if (!mainWindow) return 999; // Unlimited credits in this version
-
-    try {
-      await this.waitForInitialization(mainWindow);
-      return 999; // Always return sufficient credits to work
-    } catch (error) {
-      console.error("Error getting credits:", error);
-      return 999; // Unlimited credits as fallback
-    }
-  }
-
   private async getLanguage(): Promise<string> {
     try {
       // Get language from config
@@ -144,7 +131,7 @@ export class ProcessingHelper {
       this.initializeModelProvider();
 
       if (!this.modelProvider) {
-        console.error("OpenAI client not initialized");
+        console.error("Model provider not initialized");
         mainWindow.webContents.send(
           this.deps.PROCESSING_EVENTS.API_KEY_INVALID
         );
@@ -183,7 +170,7 @@ export class ProcessingHelper {
           console.log("Processing failed:", result.error);
           if (
             result.error?.includes("API Key") ||
-            result.error?.includes("OpenAI")
+            result.error?.includes("invalid")
           ) {
             mainWindow.webContents.send(
               this.deps.PROCESSING_EVENTS.API_KEY_INVALID
@@ -318,19 +305,6 @@ export class ProcessingHelper {
       const language = await this.getLanguage();
       const mainWindow = this.deps.getMainWindow();
 
-      // Verify client
-      if (!this.modelProvider) {
-        this.initializeModelProvider(); // Try to reinitialize
-
-        if (!this.modelProvider) {
-          return {
-            success: false,
-            error:
-              "API key not configured or invalid. Please check your settings.",
-          };
-        }
-      }
-
       // Step 1: Extract problem info using the extraction model
       const imageDataList = screenshots.map((screenshot) => screenshot.data);
 
@@ -346,14 +320,20 @@ export class ProcessingHelper {
         {
           role: "system" as const,
           content:
-            "You are a coding challenge interpreter. Analyze the screenshot of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text.",
+            config.modelProvider === "ollama"
+              ? "You are a coding challenge interpreter. Your task is to analyze screenshots of a coding problem and extract ALL the information. Return ONLY a SINGLE JSON object with these fields: problem_statement, constraints (as array), example_input, example_output. Do not include multiple possibilities or variations. ONLY return a valid JSON object."
+              : "You are a coding challenge interpreter. Analyze the screenshot of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, example_input, example_output. Just return the structured JSON without any other text.",
         },
         {
           role: "user" as const,
           content: [
             {
               type: "text" as const,
-              text: `Extract the coding problem details from these screenshots. Return in JSON format. Preferred coding language we gonna use for this problem is ${language}.`,
+              text: `Extract the coding problem details from these screenshots. Return in JSON format. Preferred coding language we gonna use for this problem is ${language}.${
+                config.modelProvider === "ollama"
+                  ? " IMPORTANT: Return ONLY a single valid JSON object, not an array of possibilities."
+                  : ""
+              }`,
             },
             ...imageDataList.map((data) => ({
               type: "image_url" as const,
@@ -363,10 +343,10 @@ export class ProcessingHelper {
         },
       ];
 
-      // Send to OpenAI Vision API
+      // Send to LLM provider's API
       const extractionResponse =
         await this.modelProvider.chat.completions.create({
-          model: config.extractionModel || "gpt-4o",
+          model: config.extractionModel,
           messages: messages,
           max_tokens: 4000,
           temperature: 0.2,
@@ -376,9 +356,79 @@ export class ProcessingHelper {
       let problemInfo;
       try {
         const responseText = extractionResponse.choices[0].message.content;
-        // Handle when OpenAI might wrap the JSON in markdown code blocks
-        const jsonText = responseText.replace(/```json|```/g, "").trim();
-        problemInfo = JSON.parse(jsonText);
+        console.log("Raw model response:", responseText);
+
+        // Clean up the response: handle malformed JSON arrays, markdown code blocks, etc.
+        let jsonText = responseText
+          .replace(/```json|```/g, "") // Remove markdown code blocks
+          .trim();
+
+        // If it starts with [ and doesn't end with ], add the closing bracket
+        if (jsonText.startsWith("[") && !jsonText.endsWith("]")) {
+          jsonText += "]";
+        }
+
+        // If it contains multiple JSON objects but isn't a proper array
+        if (jsonText.includes("}{")) {
+          jsonText = "[" + jsonText.replace(/}{/g, "},{") + "]";
+        }
+
+        // Try to parse the JSON
+        try {
+          problemInfo = JSON.parse(jsonText);
+
+          // If we got an array of problems, pick the first complete one
+          if (Array.isArray(problemInfo)) {
+            console.log(
+              `Received ${problemInfo.length} problem interpretations, selecting most complete one`
+            );
+
+            // Find the most complete problem description
+            const completeProblem = problemInfo.find(
+              (p) =>
+                p.problem_statement &&
+                ((p.constraints && p.constraints.length > 0) ||
+                  (p.example_input && p.example_output))
+            );
+
+            // If found a complete one, use it, otherwise use the first one
+            problemInfo = completeProblem || problemInfo[0];
+            console.log("Selected problem:", problemInfo);
+          }
+        } catch (jsonError) {
+          console.error("Failed to parse the JSON:", jsonError);
+
+          // If that failed, try a different approach:
+          // Extract the relevant information using regex
+          const problemMatch = responseText.match(
+            /"problem_statement"\s*:\s*"([^"]+)"/
+          );
+          const constraintsMatch = responseText.match(
+            /"constraints"\s*:\s*\[(.*?)\]/
+          );
+          const inputMatch = responseText.match(
+            /"example_input"\s*:\s*"([^"]+)"/
+          );
+          const outputMatch = responseText.match(
+            /"example_output"\s*:\s*"([^"]+)"/
+          );
+
+          if (problemMatch) {
+            problemInfo = {
+              problem_statement: problemMatch[1],
+              constraints: constraintsMatch
+                ? constraintsMatch[1]
+                    .split(",")
+                    .map((s) => s.trim().replace(/"/g, ""))
+                : [],
+              example_input: inputMatch ? inputMatch[1] : "",
+              example_output: outputMatch ? outputMatch[1] : "",
+            };
+            console.log("Extracted problem info via regex:", problemInfo);
+          } else {
+            throw new Error("Could not extract valid problem information");
+          }
+        }
 
         // Update the user on progress
         if (mainWindow) {
@@ -394,6 +444,84 @@ export class ProcessingHelper {
           "Raw response:",
           extractionResponse.choices[0].message.content
         );
+
+        // Try one last approach: extract what looks like a problem statement
+        const rawResponse = extractionResponse.choices[0].message.content;
+        if (
+          rawResponse.toLowerCase().includes("problem") &&
+          rawResponse.includes(":")
+        ) {
+          try {
+            // Create a minimal valid problem object from whatever text we have
+            const lines = rawResponse
+              .split("\n")
+              .filter((line) => line.trim().length > 0);
+            const problemLine = lines.find(
+              (line) =>
+                line.toLowerCase().includes("problem") && line.includes(":")
+            );
+
+            if (problemLine) {
+              const problemStatement = problemLine
+                .split(":")
+                .slice(1)
+                .join(":")
+                .trim();
+              problemInfo = {
+                problem_statement: problemStatement,
+                constraints: [],
+                example_input: "",
+                example_output: "",
+              };
+
+              console.log("Created minimal problem object:", problemInfo);
+
+              // Update the user on progress
+              if (mainWindow) {
+                mainWindow.webContents.send("processing-status", {
+                  message:
+                    "Problem analyzed with limited information. Proceeding...",
+                  progress: 35,
+                });
+              }
+
+              // Store problem info in AppState and continue
+              this.deps.setProblemInfo(problemInfo);
+
+              // Send first success event
+              if (mainWindow) {
+                mainWindow.webContents.send(
+                  this.deps.PROCESSING_EVENTS.PROBLEM_EXTRACTED,
+                  problemInfo
+                );
+
+                // Generate solutions after extraction
+                const solutionsResult = await this.generateSolutionsHelper(
+                  signal
+                );
+                if (solutionsResult.success) {
+                  // Clear any existing extra screenshots
+                  this.screenshotHelper.clearExtraScreenshotQueue();
+
+                  // Final progress update
+                  mainWindow.webContents.send("processing-status", {
+                    message: "Solution generated successfully",
+                    progress: 100,
+                  });
+
+                  mainWindow.webContents.send(
+                    this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS,
+                    solutionsResult.data
+                  );
+                  return { success: true, data: solutionsResult.data };
+                }
+              }
+            }
+          } catch (fallbackError) {
+            console.error("Failed even with fallback parsing:", fallbackError);
+          }
+        }
+
         return {
           success: false,
           error:
@@ -445,22 +573,22 @@ export class ProcessingHelper {
         };
       }
 
-      // Handle OpenAI API errors specifically
+      // Handle API errors generically
       if (error?.response?.status === 401) {
         return {
           success: false,
-          error: "Invalid OpenAI API key. Please check your settings.",
+          error: "Invalid API key. Please check your settings.",
         };
       } else if (error?.response?.status === 429) {
         return {
           success: false,
           error:
-            "OpenAI API rate limit exceeded or insufficient credits. Please try again later.",
+            "API rate limit exceeded or insufficient credits. Please try again later.",
         };
       } else if (error?.response?.status === 500) {
         return {
           success: false,
-          error: "OpenAI server error. Please try again later.",
+          error: "Server error. Please try again later.",
         };
       }
 
@@ -487,7 +615,7 @@ export class ProcessingHelper {
       if (!this.modelProvider) {
         return {
           success: false,
-          error: "OpenAI API key not configured. Please check your settings.",
+          error: "API key not configured. Please check your settings.",
         };
       }
 
@@ -644,17 +772,17 @@ Your solution should be efficient, well-commented, and handle edge cases.
 
       return { success: true, data: formattedResponse };
     } catch (error: any) {
-      // Handle OpenAI API errors specifically
+      // Handle API errors generically
       if (error?.response?.status === 401) {
         return {
           success: false,
-          error: "Invalid OpenAI API key. Please check your settings.",
+          error: "Invalid API key. Please check your settings.",
         };
       } else if (error?.response?.status === 429) {
         return {
           success: false,
           error:
-            "OpenAI API rate limit exceeded or insufficient credits. Please try again later.",
+            "API rate limit exceeded or insufficient credits. Please try again later.",
         };
       }
 
@@ -683,7 +811,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
       if (!this.modelProvider) {
         return {
           success: false,
-          error: "OpenAI API key not configured. Please check your settings.",
+          error: "API key not configured. Please check your settings.",
         };
       }
 
@@ -697,39 +825,50 @@ Your solution should be efficient, well-commented, and handle edge cases.
 
       // Prepare the images for the API call
       const imageDataList = screenshots.map((screenshot) => screenshot.data);
+
+      // Improved prompt with even clearer instructions
       const messages = [
         {
           role: "system" as const,
-          content: `You are a coding interview assistant helping debug and improve solutions. Analyze these screenshots which include either error messages, incorrect outputs, or test cases, and provide detailed debugging help.
-
-Your response MUST follow this exact structure with these section headers (use ### for headers):
-### Issues Identified
-- List each issue as a bullet point with clear explanation
-
-### Specific Improvements and Corrections
-- List specific code changes needed as bullet points
-
-### Optimizations
-- List any performance optimizations if applicable
-
-### Explanation of Changes Needed
-Here provide a clear explanation of why the changes are needed
-
-### Key Points
-- Summary bullet points of the most important takeaways
-
-If you include code examples, use proper markdown code blocks with language specification (e.g. \`\`\`java).`,
+          content: `You are a coding interview assistant helping debug solutions. 
+  
+  IMPORTANT: ONLY analyze code visible in the screenshots. Don't assume code not shown.
+  
+  Format your response EXACTLY in these sections:
+  
+  ----- ISSUES IDENTIFIED -----
+  • List actual issues you see in the code (not theoretical issues)
+  • If no issues are found, explicitly state "No issues found in the visible code"
+  
+  ----- CODE CHANGES -----
+  This section MUST ONLY contain runnable code that should be changed.
+  If no changes are needed, write ONLY: "No code changes required."
+  DO NOT include explanations or comments in this section - ONLY code.
+  
+  ----- EXPLANATION -----
+  Explain why the changes are needed based on the visible code.
+  If no changes are needed, explain why the code is already correct.
+  
+  ----- KEY POINTS -----
+  • Summary of most important takeaways
+  
+  The CODE CHANGES section must ONLY contain actual code that can be directly pasted into an editor.`,
         },
         {
           role: "user" as const,
           content: [
             {
               type: "text" as const,
-              text: `I'm solving this coding problem: "${problemInfo.problem_statement}" in ${language}. I need help with debugging or improving my solution. Here are screenshots of my code, the errors or test cases. Please provide a detailed analysis with:
-1. What issues you found in my code
-2. Specific improvements and corrections
-3. Any optimizations that would make the solution better
-4. A clear explanation of the changes needed`,
+              text: `I'm solving this coding problem: "${problemInfo.problem_statement}" in ${language}.
+  
+  I need help debugging ONLY the code visible in these screenshots:
+  1. Don't make assumptions about code you can't see
+  2. If my code already looks correct, just say so
+  3. Be specific about line numbers when possible
+  4. In the CODE CHANGES section, ONLY include actual code that should be changed
+  5. NEVER invent code that isn't in the screenshots
+  
+  Please follow the format exactly and focus on REAL problems, not theoretical ones.`,
             },
             ...imageDataList.map((data) => ({
               type: "image_url" as const,
@@ -747,7 +886,7 @@ If you include code examples, use proper markdown code blocks with language spec
         });
       }
 
-      // Send to OpenAI Vision API
+      // Send to provider API
       const debugResponse = await this.modelProvider.chat.completions.create({
         model: config.debuggingModel || "gpt-4o",
         messages: messages,
@@ -766,68 +905,154 @@ If you include code examples, use proper markdown code blocks with language spec
       // Extract and format the debug response
       const debugContent = debugResponse.choices[0].message.content;
 
-      // Extract code if there's code block in the response
-      let extractedCode = "// Debug mode - see analysis below";
-      const codeMatch = debugContent.match(/```(?:[a-zA-Z]+)?([\s\S]*?)```/);
-      if (codeMatch && codeMatch[1]) {
-        extractedCode = codeMatch[1].trim();
+      // Strip all markdown formatting to ensure clean output
+      const cleanContent = debugContent
+        .replace(/```[\s\S]*?```/g, (match) => {
+          // For code blocks, keep the content but remove the backticks
+          return match.replace(/```(?:\w+)?\n?|\n?```/g, "");
+        })
+        .replace(/\*\*(.*?)\*\*/g, "$1") // Remove bold formatting
+        .replace(/\*(.*?)\*/g, "$1") // Remove italic formatting
+        .replace(/\[(.*?)\]\((.*?)\)/g, "$1 ($2)") // Convert links to plain text
+        .replace(/#+\s+(.*?)\n/g, "$1:\n") // Convert headers to plain text with colon
+        .replace(/^\s*[-*]\s+/gm, "• "); // Standardize bullet points
+
+      // Format the sections
+      const sections = {
+        issues: "",
+        codeChanges: "",
+        explanation: "",
+        keyPoints: "",
+      };
+
+      // Extract sections using plain text markers
+      if (cleanContent.includes("----- ISSUES IDENTIFIED -----")) {
+        const parts = cleanContent.split(/-----.*?-----/);
+        if (parts.length >= 4) {
+          sections.issues = parts[1].trim();
+          sections.codeChanges = parts[2].trim();
+          sections.explanation = parts[3].trim();
+
+          // Key points might be in part 4 if it exists
+          if (parts.length >= 5) {
+            sections.keyPoints = parts[4].trim();
+          }
+        }
+      } else {
+        // Fallback: try to identify sections by keywords
+        const content = cleanContent;
+
+        const issuesMatch = content.match(
+          /(?:Issues identified|Problems found):([\s\S]*?)(?:Code changes|Code improvements|Explanation|$)/i
+        );
+        if (issuesMatch) sections.issues = issuesMatch[1].trim();
+
+        const codeMatch = content.match(
+          /(?:Code changes|Code improvements|Suggested changes|Fixes):([\s\S]*?)(?:Explanation|Key points|$)/i
+        );
+        if (codeMatch) sections.codeChanges = codeMatch[1].trim();
+
+        const explanationMatch = content.match(
+          /(?:Explanation|Reasoning|Analysis):([\s\S]*?)(?:Key points|$)/i
+        );
+        if (explanationMatch) sections.explanation = explanationMatch[1].trim();
+
+        const keyPointsMatch = content.match(
+          /(?:Key points|Summary|Takeaways):([\s\S]*?)$/i
+        );
+        if (keyPointsMatch) sections.keyPoints = keyPointsMatch[1].trim();
       }
 
-      // Format the debug content for better display - add clear section headings
-      let formattedDebugContent = debugContent;
+      // Detect if no issues were found
+      const noIssuesFound =
+        sections.issues.toLowerCase().includes("no issues") ||
+        sections.issues.toLowerCase().includes("code looks correct") ||
+        sections.issues.toLowerCase().includes("not found") ||
+        sections.codeChanges.toLowerCase().includes("no code changes") ||
+        !sections.issues.trim();
 
-      // Ensure proper section formatting
-      if (!debugContent.includes("# ") && !debugContent.includes("## ")) {
-        formattedDebugContent = debugContent
-          .replace(
-            /issues identified|problems found|bugs found/i,
-            "## Issues Identified"
-          )
-          .replace(
-            /code improvements|improvements|suggested changes/i,
-            "## Code Improvements"
-          )
-          .replace(
-            /optimizations|performance improvements/i,
-            "## Optimizations"
-          )
-          .replace(/explanation|detailed analysis/i, "## Explanation");
+      // Special handling for code
+      let codeChanges = "";
+
+      if (noIssuesFound) {
+        codeChanges = "__NO_CODE_CHANGES_NEEDED__"; // Special marker for frontend
+      } else {
+        // If there are code changes, clean up the section to only include actual code
+        if (
+          sections.codeChanges &&
+          !sections.codeChanges.toLowerCase().includes("no code changes")
+        ) {
+          // Remove any explanatory text that might be mixed with the code
+          const codeLines = sections.codeChanges
+            .split("\n")
+            .filter(
+              (line) =>
+                !line.toLowerCase().includes("should be") &&
+                !line.toLowerCase().includes("recommend") &&
+                !line.toLowerCase().includes("would change") &&
+                !line.toLowerCase().includes("here's") &&
+                !line.toLowerCase().startsWith("•") &&
+                line.trim() !== ""
+            );
+
+          codeChanges = codeLines.join("\n");
+
+          // If we've filtered everything out, provide a fallback
+          if (!codeChanges.trim()) {
+            codeChanges = "__ANALYSIS_ONLY__"; // Special marker for frontend
+          }
+        } else {
+          codeChanges = "__ANALYSIS_ONLY__"; // Special marker for frontend
+        }
       }
 
-      // Try to extract bullet points for "thoughts"
-      const bulletPoints = formattedDebugContent.match(
-        /(?:^|\n)[ ]*(?:[-*•]|\d+\.)[ ]+([^\n]+)/g
-      );
-      const thoughts = bulletPoints
-        ? bulletPoints
-            .map((point: string) =>
-              point.replace(/^[ ]*(?:[-*•]|\d+\.)[ ]+/, "").trim()
-            )
+      // Format the analysis without duplicating issue info
+      const formattedAnalysis =
+        "ISSUES IDENTIFIED:\n" +
+        (sections.issues ||
+          "No specific issues identified in the visible code") +
+        "\n\n" +
+        "EXPLANATION:\n" +
+        (sections.explanation || "No additional explanation provided") +
+        "\n\n" +
+        "KEY POINTS:\n" +
+        (sections.keyPoints ||
+          "• Review the suggested changes carefully\n• Test the solution after making changes");
+
+      // Extract thoughts bullet points
+      const thoughtsLines = cleanContent.match(/(?:^|\n)\s*•\s*(.*?)(?:\n|$)/g);
+      const thoughts = thoughtsLines
+        ? thoughtsLines
+            .map((line) => line.replace(/\s*•\s*/, "").trim())
+            .filter(Boolean)
+            .filter((t) => t.length >= 5) // Only include meaningful thoughts
             .slice(0, 5)
-        : ["Debug analysis based on your screenshots"];
+        : ["Review the analysis to improve your solution"];
 
-      // Return the debug assistance in the format expected by the app
+      // Create a more structured response that avoids duplication
+      // and clearly communicates to the frontend when no changes are needed
       const response = {
-        code: extractedCode,
-        debug_analysis: formattedDebugContent,
-        thoughts: thoughts,
+        code: codeChanges, // Special markers for frontend processing
+        debug_analysis: formattedAnalysis, // Full analysis for the analysis section
+        thoughts: thoughts, // Bullet points for quick reference
         time_complexity: "N/A - Debug mode",
         space_complexity: "N/A - Debug mode",
+        status: noIssuesFound ? "NO_CHANGES" : "HAS_CHANGES", // Explicit status flag
       };
 
       return { success: true, data: response };
     } catch (error: any) {
-      // Handle OpenAI API errors specifically
+      // Error handling remains the same
       if (error?.response?.status === 401) {
         return {
           success: false,
-          error: "Invalid OpenAI API key. Please check your settings.",
+          error: "Invalid API key. Please check your settings.",
         };
       } else if (error?.response?.status === 429) {
         return {
           success: false,
           error:
-            "OpenAI API rate limit exceeded or insufficient credits. Please try again later.",
+            "API rate limit exceeded or insufficient credits. Please try again later.",
         };
       }
 

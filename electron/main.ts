@@ -6,10 +6,10 @@ import { ProcessingHelper } from "./ProcessingHelper";
 import { ScreenshotHelper } from "./ScreenshotHelper";
 import { ShortcutsHelper } from "./shortcuts";
 import { configHelper } from "./ConfigHelper";
+import { debounce } from "lodash";
 
 // Constants
-const isDev = process.env.NODE_ENV === "development";
-
+export const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
 // Add more detailed logging for window events
 let isLoading = false;
 
@@ -38,9 +38,8 @@ const state = {
 
   // Processing events
   PROCESSING_EVENTS: {
-    UNAUTHORIZED: "processing-unauthorized",
+    SCREENSHOT_ERROR: "screenshot-error",
     NO_SCREENSHOTS: "processing-no-screenshots",
-    OUT_OF_CREDITS: "out-of-credits",
     API_KEY_INVALID: "api-key-invalid",
     INITIAL_START: "initial-start",
     PROBLEM_EXTRACTED: "problem-extracted",
@@ -50,6 +49,7 @@ const state = {
     DEBUG_SUCCESS: "debug-success",
     DEBUG_ERROR: "debug-error",
   } as const,
+  isDimensionUpdateInProgress: false,
 };
 
 // Add interfaces for helper classes
@@ -206,10 +206,7 @@ async function createWindow(): Promise<void> {
   state.currentY = 50;
 
   const windowSettings: Electron.BrowserWindowConstructorOptions = {
-    width: 800,
     height: 600,
-    minWidth: 750,
-    minHeight: 550,
     x: state.currentX,
     y: 50,
     alwaysOnTop: true,
@@ -226,7 +223,6 @@ async function createWindow(): Promise<void> {
     transparent: true,
     fullscreenable: false,
     hasShadow: false,
-    opacity: 1.0, // Start with full opacity
     backgroundColor: "#00000000",
     focusable: true,
     skipTaskbar: true,
@@ -234,7 +230,8 @@ async function createWindow(): Promise<void> {
     paintWhenInitiallyHidden: true,
     titleBarStyle: "hidden",
     enableLargerThanScreen: true,
-    movable: true,
+    movable: false,
+    resizable: false,
   };
 
   state.mainWindow = new BrowserWindow(windowSettings);
@@ -272,7 +269,7 @@ async function createWindow(): Promise<void> {
   // Load the app only once
   if (!isLoading) {
     isLoading = true;
-
+    console.log("isDev: " + isDev);
     if (isDev) {
       // In development, load from the dev server
       console.log("Loading from development server: http://localhost:54321");
@@ -313,9 +310,6 @@ async function createWindow(): Promise<void> {
 
   // Configure window behavior
   state.mainWindow.webContents.setZoomFactor(1);
-  if (isDev) {
-    state.mainWindow.webContents.openDevTools();
-  }
   state.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     console.log("Attempting to open URL:", url);
     if (url.includes("google.com")) {
@@ -381,6 +375,63 @@ async function createWindow(): Promise<void> {
     state.mainWindow.setOpacity(savedOpacity);
     state.isWindowVisible = true;
   }
+  devTools(); // Open DevTools if in development mode
+}
+
+export function devTools(): void {
+  // Check if the main window is not destroyed
+  if (!state.mainWindow || state.mainWindow.isDestroyed()) {
+    console.log("Main window is null or destroyed, skipping DevTools");
+    return;
+  }
+
+  // Get current DevTools state
+  const isDevToolsOpen = state.mainWindow.webContents.isDevToolsOpened();
+
+  // If DevTools not open, open it. If DevTools open, close it.
+  if (isDev && !isDevToolsOpen) {
+    // Open DevTools in a detached window
+    state.mainWindow.webContents.openDevTools({ mode: "detach" });
+
+    // Resize window to accommodate DevTools and set it to a good position
+    const currentDisplay = screen.getDisplayNearestPoint({
+      x: state.mainWindow.getBounds().x,
+      y: state.mainWindow.getBounds().y,
+    });
+
+    // Calculate a good size and position for development
+    const devWidth = Math.min(1000, currentDisplay.workAreaSize.width * 0.6);
+    const devHeight = Math.min(800, currentDisplay.workAreaSize.height * 0.8);
+    const devX =
+      currentDisplay.workArea.x +
+      (currentDisplay.workArea.width - devWidth) / 2;
+    const devY =
+      currentDisplay.workArea.y +
+      (currentDisplay.workArea.height - devHeight) / 2;
+
+    // Apply new dimensions
+    state.mainWindow.setBounds({
+      x: Math.round(devX),
+      y: Math.round(devY),
+      width: Math.round(devWidth),
+      height: Math.round(devHeight),
+    });
+
+    // Update state to reflect new position and size
+    state.windowPosition = { x: Math.round(devX), y: Math.round(devY) };
+    state.windowSize = {
+      width: Math.round(devWidth),
+      height: Math.round(devHeight),
+    };
+    state.currentX = Math.round(devX);
+    state.currentY = Math.round(devY);
+
+    console.log("DevTools opened");
+  } else if (isDevToolsOpen) {
+    // Close DevTools if they're open
+    state.mainWindow.webContents.closeDevTools();
+    console.log("DevTools closed");
+  }
 }
 
 function handleWindowMove(): void {
@@ -411,14 +462,27 @@ function hideMainWindow(): void {
     state.windowPosition = { x: bounds.x, y: bounds.y };
     state.windowSize = { width: bounds.width, height: bounds.height };
     state.mainWindow.setIgnoreMouseEvents(true, { forward: true });
+    state.mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
+    state.mainWindow.setVisibleOnAllWorkspaces(true, {
+      visibleOnFullScreen: true,
+    });
     state.mainWindow.setOpacity(0);
+    state.mainWindow.hide();
     state.isWindowVisible = false;
-    console.log("Window hidden, opacity set to 0");
   }
 }
 
 function showMainWindow(): void {
-  if (!state.mainWindow?.isDestroyed()) {
+  // If window is null or destroyed, try to create a new one
+  if (!state.mainWindow || state.mainWindow.isDestroyed()) {
+    console.log("Window is null or destroyed, creating new window");
+    createWindow().catch((err) => {
+      console.error("Failed to create new window:", err);
+    });
+    return;
+  }
+
+  try {
     if (state.windowPosition && state.windowSize) {
       state.mainWindow.setBounds({
         ...state.windowPosition,
@@ -431,20 +495,20 @@ function showMainWindow(): void {
       visibleOnFullScreen: true,
     });
     state.mainWindow.setContentProtection(true);
-    state.mainWindow.setOpacity(0); // Set opacity to 0 before showing
-    state.mainWindow.showInactive(); // Use showInactive instead of show+focus
-    state.mainWindow.setOpacity(1); // Then set opacity to 1 after showing
+    state.mainWindow.setOpacity(0);
+    state.mainWindow.showInactive();
+    state.mainWindow.setOpacity(1);
     state.isWindowVisible = true;
-    console.log("Window shown with showInactive(), opacity set to 1");
+  } catch (error) {
+    console.error("Error showing window:", error);
+    // If we encounter an error, try to create a new window
+    createWindow().catch((err) => {
+      console.error("Failed to create new window after error:", err);
+    });
   }
 }
 
 function toggleMainWindow(): void {
-  console.log(
-    `Toggling window. Current state: ${
-      state.isWindowVisible ? "visible" : "hidden"
-    }`
-  );
   if (state.isWindowVisible) {
     hideMainWindow();
   } else {
@@ -472,14 +536,14 @@ function moveWindowVertical(updateFn: (y: number) => number): void {
     state.screenHeight + ((state.windowSize?.height || 0) * 2) / 3;
 
   // Log the current state and limits
-  console.log({
+  /*console.log({
     newY,
     maxUpLimit,
     maxDownLimit,
     screenHeight: state.screenHeight,
     windowHeight: state.windowSize?.height,
     currentY: state.currentY,
-  });
+  });*/
 
   // Only update if within bounds
   if (newY >= maxUpLimit && newY <= maxDownLimit) {
@@ -492,21 +556,61 @@ function moveWindowVertical(updateFn: (y: number) => number): void {
 }
 
 // Window dimension functions
-function setWindowDimensions(width: number, height: number): void {
+const setWindowDimensionsInternal = (width: number, height: number): void => {
   if (!state.mainWindow?.isDestroyed()) {
+    if (state.isDimensionUpdateInProgress) {
+      console.log("Dimension update already in progress, skipping");
+      return;
+    }
+
+    state.isDimensionUpdateInProgress = true;
+
+    // Get current position
     const [currentX, currentY] = state.mainWindow.getPosition();
+
+    // Get screen dimensions
     const primaryDisplay = screen.getPrimaryDisplay();
     const workArea = primaryDisplay.workAreaSize;
-    const maxWidth = Math.floor(workArea.width * 0.5);
 
-    state.mainWindow.setBounds({
-      x: Math.min(currentX, workArea.width - maxWidth),
-      y: currentY,
-      width: Math.min(width + 32, maxWidth),
-      height: Math.ceil(height),
-    });
+    // Calculate maximum dimensions (50% of screen width, 80% of screen height)
+    const maxWidth = Math.floor(workArea.width * 0.5);
+    const maxHeight = Math.floor(workArea.height * 0.8);
+
+    // Ensure minimum dimensions for good UX
+    const finalWidth = Math.max(500, Math.min(width + 32, maxWidth));
+    const finalHeight = Math.max(400, Math.min(height + 32, maxHeight));
+
+    // Only update if dimensions have actually changed
+    const currentBounds = state.mainWindow.getBounds();
+    if (
+      currentBounds.width !== finalWidth ||
+      currentBounds.height !== finalHeight
+    ) {
+      // Apply new dimensions to window
+      state.mainWindow.setBounds({
+        x: Math.min(currentX, workArea.width - finalWidth),
+        y: currentY,
+        width: finalWidth,
+        height: finalHeight,
+      });
+
+      // Update state to reflect new size
+      state.windowSize = { width: finalWidth, height: finalHeight };
+
+      console.log(`Window dimensions updated to ${finalWidth}x${finalHeight}`);
+      setTimeout(() => {
+        state.isDimensionUpdateInProgress = false;
+      }, 100);
+    } else {
+      console.log(
+        `Skipping dimension update (already at ${finalWidth}x${finalHeight})`
+      );
+      state.isDimensionUpdateInProgress = false;
+    }
   }
-}
+};
+
+const setWindowDimensions = debounce(setWindowDimensionsInternal, 300);
 
 // Initialize application
 async function initializeApp() {

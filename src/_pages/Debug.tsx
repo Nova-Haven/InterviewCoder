@@ -175,8 +175,18 @@ const Debug: React.FC<DebugProps> = ({
         if (data.debug_analysis) {
           // Store the debug analysis in its own state variable
           setDebugAnalysis(data.debug_analysis);
-          // Set code separately for the code section
-          setNewCode(data.code || "// Debug mode - see analysis below");
+
+          // Check for special markers in the code and handle them appropriately
+          if (data.code === "__NO_CODE_CHANGES_NEEDED__") {
+            setNewCode(
+              "// No code changes needed - current implementation looks correct"
+            );
+          } else if (data.code === "__ANALYSIS_ONLY__") {
+            setNewCode("// See analysis below for recommended changes");
+          } else {
+            // Set code separately for the code section
+            setNewCode(data.code || "// Debug mode - see analysis below");
+          }
 
           // Process thoughts/analysis points
           if (data.debug_analysis.includes("\n\n")) {
@@ -303,7 +313,6 @@ const Debug: React.FC<DebugProps> = ({
           onTooltipVisibilityChange={handleTooltipVisibilityChange}
           isProcessing={isProcessing}
           extraScreenshots={screenshots}
-          credits={window.__CREDITS__}
           currentLanguage={currentLanguage}
           setLanguage={setLanguage}
         />

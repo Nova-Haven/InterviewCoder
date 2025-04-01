@@ -115,23 +115,12 @@ export function Header({
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 px-2 text-white/70 hover:text-white hover:bg-white/10"
+          className="h-8 px-2 text-white/70 hover:text-white hover:bg-white/10 clickable"
           onClick={onOpenSettings}
           title="Settings"
         >
           <Settings className="h-4 w-4 mr-1" />
           <span className="text-xs">Settings</span>
-        </Button>
-
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 px-2 text-red-400/80 hover:text-red-400 hover:bg-white/10"
-          onClick={handleLogout}
-          title="Log Out"
-        >
-          <LogOut className="h-4 w-4 mr-1" />
-          <span className="text-xs">Log Out</span>
         </Button>
       </div>
     </div>

@@ -9,7 +9,6 @@ export interface SolutionCommandsProps {
   isProcessing: boolean;
   screenshots?: Screenshot[];
   extraScreenshots?: Screenshot[];
-  credits: number;
   currentLanguage: string;
   setLanguage: (language: string) => void;
 }
@@ -28,7 +27,6 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
   onTooltipVisibilityChange,
   isProcessing,
   extraScreenshots = [],
-  credits,
   currentLanguage,
   setLanguage,
 }) => {

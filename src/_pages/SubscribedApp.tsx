@@ -6,13 +6,11 @@ import Solutions from "../_pages/Solutions";
 import { useToast } from "../contexts/toast";
 
 interface SubscribedAppProps {
-  credits: number;
   currentLanguage: string;
   setLanguage: (language: string) => void;
 }
 
 const SubscribedApp: React.FC<SubscribedAppProps> = ({
-  credits,
   currentLanguage,
   setLanguage,
 }) => {
@@ -101,18 +99,6 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
         setView("solutions");
         // Rest of your handler
       }),
-      window.electronAPI.onUnauthorized(() => {
-        queryClient.removeQueries({
-          queryKey: ["screenshots"],
-        });
-        queryClient.removeQueries({
-          queryKey: ["solution"],
-        });
-        queryClient.removeQueries({
-          queryKey: ["problem_statement"],
-        });
-        setView("queue");
-      }),
       window.electronAPI.onResetView(() => {
         queryClient.removeQueries({
           queryKey: ["screenshots"],
@@ -148,14 +134,12 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
       {view === "queue" ? (
         <Queue
           setView={setView}
-          credits={credits}
           currentLanguage={currentLanguage}
           setLanguage={setLanguage}
         />
       ) : view === "solutions" ? (
         <Solutions
           setView={setView}
-          credits={credits}
           currentLanguage={currentLanguage}
           setLanguage={setLanguage}
         />

@@ -7,7 +7,6 @@ import { COMMAND_KEY } from "../../utils/platform";
 interface QueueCommandsProps {
   onTooltipVisibilityChange: (visible: boolean, height: number) => void;
   screenshotCount?: number;
-  credits: number;
   currentLanguage: string;
   setLanguage: (language: string) => void;
 }
@@ -15,13 +14,48 @@ interface QueueCommandsProps {
 const QueueCommands: React.FC<QueueCommandsProps> = ({
   onTooltipVisibilityChange,
   screenshotCount = 0,
-  credits,
   currentLanguage,
   setLanguage,
 }) => {
   const [isTooltipVisible, setIsTooltipVisible] = useState(false);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const { showToast } = useToast();
+
+  useEffect(() => {
+    // Use a small timeout to ensure the component is fully rendered
+    const timer = setTimeout(() => {
+      // Update window dimensions to a compact size for the empty state
+      window.electronAPI.updateContentDimensions({
+        width: 400, // Small width for empty state
+        height: 250, // Small height for empty state
+      });
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    // Only run this effect when the screenshot count changes
+    if (screenshotCount === 0) {
+      // Small window for empty state
+      const timer = setTimeout(() => {
+        window.electronAPI.updateContentDimensions({
+          width: 400,
+          height: 250,
+        });
+      }, 100);
+      return () => clearTimeout(timer);
+    } else if (screenshotCount > 0 && screenshotCount <= 5) {
+      // Larger window for screenshots
+      const timer = setTimeout(() => {
+        window.electronAPI.updateContentDimensions({
+          width: 500 + screenshotCount * 100,
+          height: 400,
+        });
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [screenshotCount]);
 
   useEffect(() => {
     let tooltipHeight = 0;
@@ -82,7 +116,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
               }
             }}
           >
-            <span className="text-[11px] leading-none truncate">
+            <span className="text-[11px] leading-none truncate clickable">
               {screenshotCount === 0
                 ? "Take first screenshot"
                 : screenshotCount === 1
@@ -108,9 +142,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
           {/* Solve Command */}
           {screenshotCount > 0 && (
             <div
-              className={`flex flex-col cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors ${
-                credits <= 0 ? "opacity-50 cursor-not-allowed" : ""
-              }`}
+              className={`flex flex-col cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors}`}
               onClick={async () => {
                 try {
                   const result =
@@ -156,7 +188,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
             onMouseLeave={handleMouseLeave}
           >
             {/* Gear icon */}
-            <div className="w-4 h-4 flex items-center justify-center cursor-pointer text-white/70 hover:text-white/90 transition-colors">
+            <div className="w-4 h-4 flex items-center justify-center cursor-pointer text-white/70 hover:text-white/90 transition-colors clickable">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 24 24"
@@ -187,7 +219,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                     <div className="space-y-3">
                       {/* Toggle Command */}
                       <div
-                        className="cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors"
+                        className="cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors clickable"
                         onClick={async () => {
                           try {
                             const result =
@@ -231,7 +263,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
 
                       {/* Screenshot Command */}
                       <div
-                        className="cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors"
+                        className="cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors clickable"
                         onClick={async () => {
                           try {
                             const result =
@@ -277,7 +309,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                       <div
                         className={`cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors ${
                           screenshotCount > 0
-                            ? ""
+                            ? "clickable"
                             : "opacity-50 cursor-not-allowed"
                         }`}
                         onClick={async () => {
@@ -310,7 +342,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                           }
                         }}
                       >
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between clickable">
                           <span className="truncate">Solve</span>
                           <div className="flex gap-1 flex-shrink-0">
                             <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
@@ -332,7 +364,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                       <div
                         className={`cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors ${
                           screenshotCount > 0
-                            ? ""
+                            ? "clickable"
                             : "opacity-50 cursor-not-allowed"
                         }`}
                         onClick={async () => {
@@ -391,7 +423,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                       />
 
                       {/* API Key Settings */}
-                      <div className="mb-3 px-2 space-y-1">
+                      <div className="mb-3 px-2 space-y-1 clickable">
                         <div className="flex items-center justify-between text-[13px] font-medium text-white/90">
                           <span>API Settings</span>
                           <button

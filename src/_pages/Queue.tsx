@@ -18,14 +18,12 @@ async function fetchScreenshots(): Promise<Screenshot[]> {
 
 interface QueueProps {
   setView: (view: "queue" | "solutions" | "debug") => void;
-  credits: number;
   currentLanguage: string;
   setLanguage: (language: string) => void;
 }
 
 const Queue: React.FC<QueueProps> = ({
   setView,
-  credits,
   currentLanguage,
   setLanguage,
 }) => {
@@ -122,7 +120,6 @@ const Queue: React.FC<QueueProps> = ({
           "neutral"
         );
       }),
-      // Removed out of credits handler - unlimited credits in this version
     ];
 
     return () => {
@@ -134,10 +131,6 @@ const Queue: React.FC<QueueProps> = ({
   const handleTooltipVisibilityChange = (visible: boolean, height: number) => {
     setIsTooltipVisible(visible);
     setTooltipHeight(height);
-  };
-
-  const handleOpenSettings = () => {
-    window.electronAPI.openSettingsPortal();
   };
 
   return (
@@ -153,7 +146,6 @@ const Queue: React.FC<QueueProps> = ({
           <QueueCommands
             onTooltipVisibilityChange={handleTooltipVisibilityChange}
             screenshotCount={screenshots.length}
-            credits={credits}
             currentLanguage={currentLanguage}
             setLanguage={setLanguage}
           />

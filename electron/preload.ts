@@ -1,41 +1,94 @@
 console.log("Preload script starting...");
 import { contextBridge, ipcRenderer, shell } from "electron";
 
-export const PROCESSING_EVENTS = {
-  //global states
-  UNAUTHORIZED: "procesing-unauthorized",
-  NO_SCREENSHOTS: "processing-no-screenshots",
-  OUT_OF_CREDITS: "out-of-credits",
-  API_KEY_INVALID: "api-key-invalid",
+// Types for the exposed Electron API
+interface ElectronAPI {
+  // System and window operations
+  openLink: (url: string) => Promise<void>;
+  updateContentDimensions: (dimensions: {
+    width: number;
+    height: number;
+  }) => Promise<void>;
+  toggleMainWindow: () => Promise<void>;
+  openSettingsPortal: () => Promise<void>;
+  getPlatform: () => Promise<string>;
 
-  //states for generating the initial solution
+  // Screenshot operations
+  getScreenshots: () => Promise<{
+    success: boolean;
+    previews?: Array<{ path: string; preview: string }> | null;
+    error?: string;
+  }>;
+  deleteScreenshot: (path: string) => Promise<void>;
+  triggerScreenshot: () => Promise<void>;
+  triggerProcessScreenshots: () => Promise<void>;
+  deleteLastScreenshot: () => Promise<void>;
+
+  // Navigation controls
+  triggerReset: () => Promise<void>;
+  triggerMoveLeft: () => Promise<void>;
+  triggerMoveRight: () => Promise<void>;
+  triggerMoveUp: () => Promise<void>;
+  triggerMoveDown: () => Promise<void>;
+
+  // Configuration
+  getConfig: () => Promise<any>;
+  updateConfig: (config: any) => Promise<void>;
+  checkApiKey: () => Promise<boolean>;
+  validateApiKey: (apiKey: string) => Promise<boolean>;
+
+  // Event listeners
+  onScreenshotTaken: (
+    callback: (data: { path: string; preview: string }) => void
+  ) => () => void;
+  onScreenshotError: (callback: (error: string) => void) => () => void;
+  onResetView: (callback: () => void) => () => void;
+  onShowSettings: (callback: () => void) => () => void;
+  onDeleteLastScreenshot: (callback: () => void) => () => void;
+
+  // Processing event listeners
+  onSolutionStart: (callback: () => void) => () => void;
+  onProblemExtracted: (callback: (data: any) => void) => () => void;
+  onSolutionSuccess: (callback: (data: any) => void) => () => void;
+  onSolutionError: (callback: (error: string) => void) => () => void;
+  onDebugStart: (callback: () => void) => () => void;
+  onDebugSuccess: (callback: (data: any) => void) => () => void;
+  onDebugError: (callback: (error: string) => void) => () => void;
+  onProcessingNoScreenshots: (callback: () => void) => () => void;
+  onApiKeyInvalid: (callback: () => void) => () => void;
+  onReset: (callback: () => void) => () => void;
+  setIgnoreMouseEvents: (
+    ignore: boolean,
+    options?: { forward: boolean }
+  ) => Promise<void>;
+}
+
+export const PROCESSING_EVENTS = {
+  // Global states
+  NO_SCREENSHOTS: "processing-no-screenshots",
+  API_KEY_INVALID: "api-key-invalid",
+  SCREENSHOT_ERROR: "screenshot-error",
+
+  // States for generating the initial solution
   INITIAL_START: "initial-start",
   PROBLEM_EXTRACTED: "problem-extracted",
   SOLUTION_SUCCESS: "solution-success",
   INITIAL_SOLUTION_ERROR: "solution-error",
   RESET: "reset",
 
-  //states for processing the debugging
+  // States for processing the debugging
   DEBUG_START: "debug-start",
   DEBUG_SUCCESS: "debug-success",
   DEBUG_ERROR: "debug-error",
 } as const;
 
-// At the top of the file
 console.log("Preload script is running");
 
-const electronAPI = {
-  // Original methods
-  openSubscriptionPortal: async (authData: { id: string; email: string }) => {
-    return ipcRenderer.invoke("open-subscription-portal", authData);
-  },
-  openSettingsPortal: () => ipcRenderer.invoke("open-settings-portal"),
+const electronAPI: ElectronAPI = {
+  // System and window operations
+  openLink: (url: string) => shell.openExternal(url),
   updateContentDimensions: (dimensions: { width: number; height: number }) =>
     ipcRenderer.invoke("update-content-dimensions", dimensions),
-  clearStore: () => ipcRenderer.invoke("clear-store"),
-  getScreenshots: () => ipcRenderer.invoke("get-screenshots"),
-  deleteScreenshot: (path: string) =>
-    ipcRenderer.invoke("delete-screenshot", path),
   toggleMainWindow: async () => {
     console.log("toggleMainWindow called from preload");
     try {
@@ -47,7 +100,44 @@ const electronAPI = {
       throw error;
     }
   },
-  // Event listeners
+  openSettingsPortal: () => ipcRenderer.invoke("open-settings-portal"),
+  getPlatform: async () => {
+    try {
+      //console.log("Calling get-platform from preload");
+      const platform =
+        (await ipcRenderer.invoke("get-platform")) || process.platform;
+      //console.log("Platform returned:", platform);
+      return platform;
+    } catch (error) {
+      console.error("Error getting platform:", error);
+      return process.platform;
+    }
+  },
+
+  // Screenshot operations
+  getScreenshots: () => ipcRenderer.invoke("get-screenshots"),
+  deleteScreenshot: (path: string) =>
+    ipcRenderer.invoke("delete-screenshot", path),
+  triggerScreenshot: () => ipcRenderer.invoke("trigger-screenshot"),
+  triggerProcessScreenshots: () =>
+    ipcRenderer.invoke("trigger-process-screenshots"),
+  deleteLastScreenshot: () => ipcRenderer.invoke("delete-last-screenshot"),
+
+  // Navigation controls
+  triggerReset: () => ipcRenderer.invoke("trigger-reset"),
+  triggerMoveLeft: () => ipcRenderer.invoke("trigger-move-left"),
+  triggerMoveRight: () => ipcRenderer.invoke("trigger-move-right"),
+  triggerMoveUp: () => ipcRenderer.invoke("trigger-move-up"),
+  triggerMoveDown: () => ipcRenderer.invoke("trigger-move-down"),
+
+  // Configuration
+  getConfig: () => ipcRenderer.invoke("get-config"),
+  updateConfig: (config: any) => ipcRenderer.invoke("update-config", config),
+  checkApiKey: () => ipcRenderer.invoke("check-api-key"),
+  validateApiKey: (apiKey: string) =>
+    ipcRenderer.invoke("validate-api-key", apiKey),
+
+  // Event listeners - Screenshot operations
   onScreenshotTaken: (
     callback: (data: { path: string; preview: string }) => void
   ) => {
@@ -58,6 +148,16 @@ const electronAPI = {
       ipcRenderer.removeListener("screenshot-taken", subscription);
     };
   },
+  onScreenshotError: (callback: (error: string) => void) => {
+    const subscription = (_: any, error: string) => callback(error);
+    ipcRenderer.on(PROCESSING_EVENTS.SCREENSHOT_ERROR, subscription);
+    return () => {
+      ipcRenderer.removeListener(
+        PROCESSING_EVENTS.SCREENSHOT_ERROR,
+        subscription
+      );
+    };
+  },
   onResetView: (callback: () => void) => {
     const subscription = () => callback();
     ipcRenderer.on("reset-view", subscription);
@@ -65,63 +165,32 @@ const electronAPI = {
       ipcRenderer.removeListener("reset-view", subscription);
     };
   },
+  onShowSettings: (callback: () => void) => {
+    console.log("Registering onShowSettings listener");
+    const subscription = () => {
+      console.log("show-settings-dialog event received");
+      callback();
+    };
+    ipcRenderer.on("show-settings-dialog", subscription);
+    return () => {
+      console.log("Removing onShowSettings listener");
+      ipcRenderer.removeListener("show-settings-dialog", subscription);
+    };
+  },
+  onDeleteLastScreenshot: (callback: () => void) => {
+    const subscription = () => callback();
+    ipcRenderer.on("delete-last-screenshot", subscription);
+    return () => {
+      ipcRenderer.removeListener("delete-last-screenshot", subscription);
+    };
+  },
+
+  // Event listeners - Solution processing
   onSolutionStart: (callback: () => void) => {
     const subscription = () => callback();
     ipcRenderer.on(PROCESSING_EVENTS.INITIAL_START, subscription);
     return () => {
       ipcRenderer.removeListener(PROCESSING_EVENTS.INITIAL_START, subscription);
-    };
-  },
-  onDebugStart: (callback: () => void) => {
-    const subscription = () => callback();
-    ipcRenderer.on(PROCESSING_EVENTS.DEBUG_START, subscription);
-    return () => {
-      ipcRenderer.removeListener(PROCESSING_EVENTS.DEBUG_START, subscription);
-    };
-  },
-  onDebugSuccess: (callback: (data: any) => void) => {
-    ipcRenderer.on("debug-success", (_event, data) => callback(data));
-    return () => {
-      ipcRenderer.removeListener("debug-success", (_event, data) =>
-        callback(data)
-      );
-    };
-  },
-  onDebugError: (callback: (error: string) => void) => {
-    const subscription = (_: any, error: string) => callback(error);
-    ipcRenderer.on(PROCESSING_EVENTS.DEBUG_ERROR, subscription);
-    return () => {
-      ipcRenderer.removeListener(PROCESSING_EVENTS.DEBUG_ERROR, subscription);
-    };
-  },
-  onSolutionError: (callback: (error: string) => void) => {
-    const subscription = (_: any, error: string) => callback(error);
-    ipcRenderer.on(PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR, subscription);
-    return () => {
-      ipcRenderer.removeListener(
-        PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR,
-        subscription
-      );
-    };
-  },
-  onProcessingNoScreenshots: (callback: () => void) => {
-    const subscription = () => callback();
-    ipcRenderer.on(PROCESSING_EVENTS.NO_SCREENSHOTS, subscription);
-    return () => {
-      ipcRenderer.removeListener(
-        PROCESSING_EVENTS.NO_SCREENSHOTS,
-        subscription
-      );
-    };
-  },
-  onOutOfCredits: (callback: () => void) => {
-    const subscription = () => callback();
-    ipcRenderer.on(PROCESSING_EVENTS.OUT_OF_CREDITS, subscription);
-    return () => {
-      ipcRenderer.removeListener(
-        PROCESSING_EVENTS.OUT_OF_CREDITS,
-        subscription
-      );
     };
   },
   onProblemExtracted: (callback: (data: any) => void) => {
@@ -144,73 +213,51 @@ const electronAPI = {
       );
     };
   },
-  onUnauthorized: (callback: () => void) => {
-    const subscription = () => callback();
-    ipcRenderer.on(PROCESSING_EVENTS.UNAUTHORIZED, subscription);
+  onSolutionError: (callback: (error: string) => void) => {
+    const subscription = (_: any, error: string) => callback(error);
+    ipcRenderer.on(PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR, subscription);
     return () => {
-      ipcRenderer.removeListener(PROCESSING_EVENTS.UNAUTHORIZED, subscription);
+      ipcRenderer.removeListener(
+        PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR,
+        subscription
+      );
     };
   },
-  // External URL handler
-  openLink: (url: string) => shell.openExternal(url),
-  triggerScreenshot: () => ipcRenderer.invoke("trigger-screenshot"),
-  triggerProcessScreenshots: () =>
-    ipcRenderer.invoke("trigger-process-screenshots"),
-  triggerReset: () => ipcRenderer.invoke("trigger-reset"),
-  triggerMoveLeft: () => ipcRenderer.invoke("trigger-move-left"),
-  triggerMoveRight: () => ipcRenderer.invoke("trigger-move-right"),
-  triggerMoveUp: () => ipcRenderer.invoke("trigger-move-up"),
-  triggerMoveDown: () => ipcRenderer.invoke("trigger-move-down"),
-  onSubscriptionUpdated: (callback: () => void) => {
-    const subscription = () => callback();
-    ipcRenderer.on("subscription-updated", subscription);
-    return () => {
-      ipcRenderer.removeListener("subscription-updated", subscription);
-    };
-  },
-  onSubscriptionPortalClosed: (callback: () => void) => {
-    const subscription = () => callback();
-    ipcRenderer.on("subscription-portal-closed", subscription);
-    return () => {
-      ipcRenderer.removeListener("subscription-portal-closed", subscription);
-    };
-  },
-  onReset: (callback: () => void) => {
-    const subscription = () => callback();
-    ipcRenderer.on(PROCESSING_EVENTS.RESET, subscription);
-    return () => {
-      ipcRenderer.removeListener(PROCESSING_EVENTS.RESET, subscription);
-    };
-  },
-  decrementCredits: () => ipcRenderer.invoke("decrement-credits"),
-  onCreditsUpdated: (callback: (credits: number) => void) => {
-    const subscription = (_event: any, credits: number) => callback(credits);
-    ipcRenderer.on("credits-updated", subscription);
-    return () => {
-      ipcRenderer.removeListener("credits-updated", subscription);
-    };
-  },
-  getPlatform: () => process.platform,
 
-  // New methods for OpenAI API integration
-  getConfig: () => ipcRenderer.invoke("get-config"),
-  updateConfig: (config: {
-    apiKey?: string;
-    model?: string;
-    language?: string;
-    opacity?: number;
-  }) => ipcRenderer.invoke("update-config", config),
-  onShowSettings: (callback: () => void) => {
+  // Event listeners - Debug processing
+  onDebugStart: (callback: () => void) => {
     const subscription = () => callback();
-    ipcRenderer.on("show-settings-dialog", subscription);
+    ipcRenderer.on(PROCESSING_EVENTS.DEBUG_START, subscription);
     return () => {
-      ipcRenderer.removeListener("show-settings-dialog", subscription);
+      ipcRenderer.removeListener(PROCESSING_EVENTS.DEBUG_START, subscription);
     };
   },
-  checkApiKey: () => ipcRenderer.invoke("check-api-key"),
-  validateApiKey: (apiKey: string) =>
-    ipcRenderer.invoke("validate-api-key", apiKey),
-  openExternal: (url: string) => ipcRenderer.invoke("openExternal", url),
+  onDebugSuccess: (callback: (data: any) => void) => {
+    const subscription = (_: any, data: any) => callback(data);
+    ipcRenderer.on("debug-success", subscription);
+    return () => {
+      ipcRenderer.removeListener("debug-success", subscription);
+    };
+  },
+  onDebugError: (callback: (error: string) => void) => {
+    const subscription = (_: any, error: string) => callback(error);
+    ipcRenderer.on(PROCESSING_EVENTS.DEBUG_ERROR, subscription);
+    return () => {
+      ipcRenderer.removeListener(PROCESSING_EVENTS.DEBUG_ERROR, subscription);
+    };
+  },
+
+  // Event listeners - Status messages
+  onProcessingNoScreenshots: (callback: () => void) => {
+    const subscription = () => callback();
+    ipcRenderer.on(PROCESSING_EVENTS.NO_SCREENSHOTS, subscription);
+    return () => {
+      ipcRenderer.removeListener(
+        PROCESSING_EVENTS.NO_SCREENSHOTS,
+        subscription
+      );
+    };
+  },
   onApiKeyInvalid: (callback: () => void) => {
     const subscription = () => callback();
     ipcRenderer.on(PROCESSING_EVENTS.API_KEY_INVALID, subscription);
@@ -221,37 +268,77 @@ const electronAPI = {
       );
     };
   },
-  removeListener: (eventName: string, callback: (...args: any[]) => void) => {
-    ipcRenderer.removeListener(eventName, callback);
-  },
-  onDeleteLastScreenshot: (callback: () => void) => {
+  onReset: (callback: () => void) => {
     const subscription = () => callback();
-    ipcRenderer.on("delete-last-screenshot", subscription);
+    ipcRenderer.on(PROCESSING_EVENTS.RESET, subscription);
     return () => {
-      ipcRenderer.removeListener("delete-last-screenshot", subscription);
+      ipcRenderer.removeListener(PROCESSING_EVENTS.RESET, subscription);
     };
   },
-  deleteLastScreenshot: () => ipcRenderer.invoke("delete-last-screenshot"),
+  setIgnoreMouseEvents: (ignore: boolean, options?: { forward: boolean }) =>
+    ipcRenderer.invoke("set-ignore-mouse-events", ignore, options),
 };
 
-// Before exposing the API
-console.log(
-  "About to expose electronAPI with methods:",
-  Object.keys(electronAPI)
-);
+// Expose only specific API functions
+contextBridge.exposeInMainWorld("electronAPI", {
+  // Only expose the onShowSettings function
+  onShowSettings: electronAPI.onShowSettings,
 
-// Expose the API
-contextBridge.exposeInMainWorld("electronAPI", electronAPI);
+  // You need to add any other functions your app is currently using:
+  openLink: electronAPI.openLink,
+  openSettingsPortal: electronAPI.openSettingsPortal,
+  updateContentDimensions: electronAPI.updateContentDimensions,
+  toggleMainWindow: electronAPI.toggleMainWindow,
+  getPlatform: electronAPI.getPlatform,
+  getScreenshots: electronAPI.getScreenshots,
+  deleteScreenshot: electronAPI.deleteScreenshot,
+  triggerScreenshot: electronAPI.triggerScreenshot,
+  triggerProcessScreenshots: electronAPI.triggerProcessScreenshots,
+  deleteLastScreenshot: electronAPI.deleteLastScreenshot,
+  triggerReset: electronAPI.triggerReset,
+  triggerMoveLeft: electronAPI.triggerMoveLeft,
+  triggerMoveRight: electronAPI.triggerMoveRight,
+  triggerMoveUp: electronAPI.triggerMoveUp,
+  triggerMoveDown: electronAPI.triggerMoveDown,
+  getConfig: electronAPI.getConfig,
+  updateConfig: electronAPI.updateConfig,
+  checkApiKey: electronAPI.checkApiKey,
+  validateApiKey: electronAPI.validateApiKey,
+  onScreenshotTaken: electronAPI.onScreenshotTaken,
+  onScreenshotError: electronAPI.onScreenshotError,
+  onResetView: electronAPI.onResetView,
+  onDeleteLastScreenshot: electronAPI.onDeleteLastScreenshot,
+  onSolutionStart: electronAPI.onSolutionStart,
+  onProblemExtracted: electronAPI.onProblemExtracted,
+  onSolutionSuccess: electronAPI.onSolutionSuccess,
+  onSolutionError: electronAPI.onSolutionError,
+  onDebugStart: electronAPI.onDebugStart,
+  onDebugSuccess: electronAPI.onDebugSuccess,
+  onDebugError: electronAPI.onDebugError,
+  onProcessingNoScreenshots: electronAPI.onProcessingNoScreenshots,
+  onApiKeyInvalid: electronAPI.onApiKeyInvalid,
+  onReset: electronAPI.onReset,
+  setIgnoreMouseEvents: electronAPI.setIgnoreMouseEvents,
+});
 
-console.log("electronAPI exposed to window");
+// Keep the existing electron ipcRenderer exposure
+contextBridge.exposeInMainWorld("electron", {
+  ipcRenderer: {
+    on: (channel: string, func: (...args: any[]) => void) => {
+      ipcRenderer.on(channel, (event, ...args) => func(...args));
+    },
+    removeListener: (channel: string, func: (...args: any[]) => void) => {
+      ipcRenderer.removeListener(channel, (event, ...args) => func(...args));
+    },
+  },
+});
 
-// Add this focus restoration handler
+// Add focus restoration handler
 ipcRenderer.on("restore-focus", () => {
-  // Try to focus the active element if it exists
   const activeElement = document.activeElement as HTMLElement;
   if (activeElement && typeof activeElement.focus === "function") {
     activeElement.focus();
   }
 });
 
-// Remove auth-callback handling - no longer needed
+console.log("electronAPI exposed to window");

@@ -16,6 +16,12 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
     return configHelper.updateConfig(updates);
   });
 
+  // Platform handler
+  ipcMain.handle("get-platform", () => {
+    console.log("get-platform handler called, returning:", process.platform);
+    return process.platform;
+  });
+
   ipcMain.handle("check-api-key", () => {
     return configHelper.hasApiKey();
   });
@@ -32,43 +38,6 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
     // Then test the API key with OpenAI
     const result = await configHelper.testApiKey(apiKey);
     return result;
-  });
-
-  // Credits handlers
-  ipcMain.handle("set-initial-credits", async (_event, credits: number) => {
-    const mainWindow = deps.getMainWindow();
-    if (!mainWindow) return;
-
-    try {
-      // Set the credits in a way that ensures atomicity
-      await mainWindow.webContents.executeJavaScript(
-        `window.__CREDITS__ = ${credits}`
-      );
-      mainWindow.webContents.send("credits-updated", credits);
-    } catch (error) {
-      console.error("Error setting initial credits:", error);
-      throw error;
-    }
-  });
-
-  ipcMain.handle("decrement-credits", async () => {
-    const mainWindow = deps.getMainWindow();
-    if (!mainWindow) return;
-
-    try {
-      const currentCredits = await mainWindow.webContents.executeJavaScript(
-        "window.__CREDITS__"
-      );
-      if (currentCredits > 0) {
-        const newCredits = currentCredits - 1;
-        await mainWindow.webContents.executeJavaScript(
-          `window.__CREDITS__ = ${newCredits}`
-        );
-        mainWindow.webContents.send("credits-updated", newCredits);
-      }
-    } catch (error) {
-      console.error("Error decrementing credits:", error);
-    }
   });
 
   // Screenshot queue handlers
@@ -180,8 +149,6 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
       return { error: "Failed to take screenshot" };
     }
   });
-
-  // Auth-related handlers removed
 
   ipcMain.handle("open-external-url", (event, url: string) => {
     shell.openExternal(url);
@@ -350,4 +317,15 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
       return { success: false, error: "Failed to delete last screenshot" };
     }
   });
+
+  // Add click-through handler
+  ipcMain.handle(
+    "set-ignore-mouse-events",
+    (_event, ignore: boolean, options?: { forward: boolean }) => {
+      const win = deps.getMainWindow();
+      if (win && !win.isDestroyed()) {
+        win.setIgnoreMouseEvents(ignore, options);
+      }
+    }
+  );
 }

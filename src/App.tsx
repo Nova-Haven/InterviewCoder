@@ -35,19 +35,63 @@ function App() {
     description: "",
     variant: "neutral" as "neutral" | "success" | "error",
   });
-  const [credits, setCredits] = useState<number>(999); // Unlimited credits
   const [currentLanguage, setCurrentLanguage] = useState<string>("python");
   const [isInitialized, setIsInitialized] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
-  const [apiKeyDialogOpen, setApiKeyDialogOpen] = useState(false);
   // Note: Model selection is now handled via separate extraction/solution/debugging model settings
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  // Set unlimited credits
-  const updateCredits = useCallback(() => {
-    setCredits(999); // No credit limit in this version
-    window.__CREDITS__ = 999;
+  useEffect(() => {
+    // Set the window to be click-through by default
+    window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
+
+    // Create a single pointer-events handler using event delegation
+    const handlePointerEvents = (e: MouseEvent) => {
+      let target = e.target as HTMLElement;
+      let foundClickable = false;
+
+      // Traverse up to find if we're on a clickable element
+      while (target && target !== document.body) {
+        if (target.classList.contains("clickable")) {
+          foundClickable = true;
+          break;
+        }
+        target = target.parentElement as HTMLElement;
+      }
+
+      // Toggle mouse event handling based on whether we're over a clickable element
+      if (foundClickable && e.type === "mouseover") {
+        window.electronAPI.setIgnoreMouseEvents(false);
+      } else if (!foundClickable && e.type === "mouseout") {
+        // Check if the element we're moving to is also not clickable
+        let relatedTarget = e.relatedTarget as HTMLElement;
+        let movingToClickable = false;
+
+        while (relatedTarget && relatedTarget !== document.body) {
+          if (relatedTarget.classList.contains("clickable")) {
+            movingToClickable = true;
+            break;
+          }
+          relatedTarget = relatedTarget.parentElement as HTMLElement;
+        }
+
+        if (!movingToClickable) {
+          window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
+        }
+      }
+    };
+
+    // Add event listeners
+    document.addEventListener("mouseover", handlePointerEvents);
+    document.addEventListener("mouseout", handlePointerEvents);
+
+    // Clean up
+    return () => {
+      document.removeEventListener("mouseover", handlePointerEvents);
+      document.removeEventListener("mouseout", handlePointerEvents);
+      window.electronAPI.setIgnoreMouseEvents(false);
+    };
   }, []);
 
   // Helper function to safely update language
@@ -79,7 +123,7 @@ function App() {
     []
   );
 
-  // Check for OpenAI API key and prompt if not found
+  // Check for API key and prompt if not found
   useEffect(() => {
     const checkApiKey = async () => {
       try {
@@ -152,9 +196,6 @@ function App() {
     // Load config and set values
     const initializeApp = async () => {
       try {
-        // Set unlimited credits
-        updateCredits();
-
         // Load config including language and model settings
         const config = await window.electronAPI.getConfig();
 
@@ -183,22 +224,23 @@ function App() {
     const onApiKeyInvalid = () => {
       showToast(
         "API Key Invalid",
-        "Your OpenAI API key appears to be invalid or has insufficient credits",
+        "Your API key appears to be invalid or has insufficient credits",
         "error"
       );
-      setApiKeyDialogOpen(true);
     };
 
-    // Setup API key invalid listener
-    window.electronAPI.onApiKeyInvalid(onApiKeyInvalid);
+    // Store the cleanup function
+    const cleanupApiKeyListener =
+      window.electronAPI.onApiKeyInvalid(onApiKeyInvalid);
 
     // Cleanup function
     return () => {
-      window.electronAPI.removeListener("API_KEY_INVALID", onApiKeyInvalid);
+      // Call the cleanup function directly instead of manually removing
+      cleanupApiKeyListener();
       window.__IS_INITIALIZED__ = false;
       setIsInitialized(false);
     };
-  }, [updateCredits, updateLanguage, markInitialized, showToast]);
+  }, [updateLanguage, markInitialized, showToast]);
 
   // API Key dialog management
   const handleOpenSettings = useCallback(() => {
@@ -211,25 +253,6 @@ function App() {
     setIsSettingsOpen(open);
   }, []);
 
-  const handleApiKeySave = useCallback(
-    async (apiKey: string) => {
-      try {
-        await window.electronAPI.updateConfig({ apiKey });
-        setHasApiKey(true);
-        showToast("Success", "API key saved successfully", "success");
-
-        // Reload app after a short delay to reinitialize with the new API key
-        setTimeout(() => {
-          window.location.reload();
-        }, 1500);
-      } catch (error) {
-        console.error("Failed to save API key:", error);
-        showToast("Error", "Failed to save API key", "error");
-      }
-    },
-    [showToast]
-  );
-
   return (
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
@@ -238,7 +261,6 @@ function App() {
             {isInitialized ? (
               hasApiKey ? (
                 <SubscribedApp
-                  credits={credits}
                   currentLanguage={currentLanguage}
                   setLanguage={updateLanguage}
                 />

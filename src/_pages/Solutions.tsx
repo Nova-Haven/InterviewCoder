@@ -144,13 +144,11 @@ export const ComplexitySection = ({
 
 export interface SolutionsProps {
   setView: (view: "queue" | "solutions" | "debug") => void;
-  credits: number;
   currentLanguage: string;
   setLanguage: (language: string) => void;
 }
 const Solutions: React.FC<SolutionsProps> = ({
   setView,
-  credits,
   currentLanguage,
   setLanguage,
 }) => {
@@ -379,7 +377,6 @@ const Solutions: React.FC<SolutionsProps> = ({
           "neutral"
         );
       }),
-      // Removed out of credits handler - unlimited credits in this version
     ];
 
     return () => {
@@ -484,7 +481,6 @@ const Solutions: React.FC<SolutionsProps> = ({
               onTooltipVisibilityChange={handleTooltipVisibilityChange}
               isProcessing={!problemStatementData || !solutionData}
               extraScreenshots={extraScreenshots}
-              credits={credits}
               currentLanguage={currentLanguage}
               setLanguage={setLanguage}
             />

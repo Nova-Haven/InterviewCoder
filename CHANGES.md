@@ -41,27 +41,30 @@
    - Added proper language change handling
    - Made language selection persist across sessions
 
-2. **Implemented Working Logout Button**:
-
-   - Added proper API key clearing functionality to the logout button
-   - Added success feedback via toast message
-   - Implemented app reload after logout to reset state
-
-3. **Fixed Window Size Issues**:
+2. **Fixed Window Size Issues**:
 
    - Added explicit window dimensions in main.ts (width: 800px, height: 600px)
    - Added minimum window size constraints to prevent UI issues
    - Improved dimension handling with fallback sizes
 
-4. **Improved Settings Dialog Positioning**:
+3. **Improved Settings Dialog Positioning**:
 
    - Made settings dialog responsive with min/max constraints
    - Added z-index to ensure dialog appears above other content
    - Improved positioning to center properly regardless of window size
 
-5. **Enhanced Dropdown Initialization**:
+4. **Enhanced Dropdown Initialization**:
+
    - Improved dropdown initialization timing
    - Reduced initialization delay for better responsiveness
+
+5. **Enhanced shortcut detection**
+
+   - Altered the app-window shortcuts to use Alt as well
+
+6. **Added clickthrough**
+   - Only clicks in buttons will be registered, otherwise they'll be ignored.
+   - Pretty neat, huh?
 
 ### Maintaining Original UI Design
 
