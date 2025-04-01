@@ -1,67 +1,6 @@
 console.log("Preload script starting...");
 import { contextBridge, ipcRenderer, shell } from "electron";
-
-// Types for the exposed Electron API
-interface ElectronAPI {
-  // System and window operations
-  openLink: (url: string) => Promise<void>;
-  updateContentDimensions: (dimensions: {
-    width: number;
-    height: number;
-  }) => Promise<void>;
-  toggleMainWindow: () => Promise<void>;
-  openSettingsPortal: () => Promise<void>;
-  getPlatform: () => Promise<string>;
-
-  // Screenshot operations
-  getScreenshots: () => Promise<{
-    success: boolean;
-    previews?: Array<{ path: string; preview: string }> | null;
-    error?: string;
-  }>;
-  deleteScreenshot: (path: string) => Promise<void>;
-  triggerScreenshot: () => Promise<void>;
-  triggerProcessScreenshots: () => Promise<void>;
-  deleteLastScreenshot: () => Promise<void>;
-
-  // Navigation controls
-  triggerReset: () => Promise<void>;
-  triggerMoveLeft: () => Promise<void>;
-  triggerMoveRight: () => Promise<void>;
-  triggerMoveUp: () => Promise<void>;
-  triggerMoveDown: () => Promise<void>;
-
-  // Configuration
-  getConfig: () => Promise<any>;
-  updateConfig: (config: any) => Promise<void>;
-  checkApiKey: () => Promise<boolean>;
-  validateApiKey: (apiKey: string) => Promise<boolean>;
-
-  // Event listeners
-  onScreenshotTaken: (
-    callback: (data: { path: string; preview: string }) => void
-  ) => () => void;
-  onScreenshotError: (callback: (error: string) => void) => () => void;
-  onResetView: (callback: () => void) => () => void;
-  onShowSettings: (callback: () => void) => () => void;
-  onDeleteLastScreenshot: (callback: () => void) => () => void;
-
-  // Processing event listeners
-  onSolutionStart: (callback: () => void) => () => void;
-  onProblemExtracted: (callback: (data: any) => void) => () => void;
-  onSolutionSuccess: (callback: (data: any) => void) => () => void;
-  onSolutionError: (callback: (error: string) => void) => () => void;
-  onDebugStart: (callback: () => void) => () => void;
-  onDebugSuccess: (callback: (data: any) => void) => () => void;
-  onDebugError: (callback: (error: string) => void) => () => void;
-  onProcessingNoScreenshots: (callback: () => void) => () => void;
-  onApiKeyInvalid: (callback: () => void) => () => void;
-  onReset: (callback: () => void) => () => void;
-  setIgnoreMouseEvents: (
-    ignore: boolean,
-    options?: { forward: boolean }
-  ) => Promise<void>;
-}
+import { ElectronAPI } from "../src/types/electron";
 
 export const PROCESSING_EVENTS = {
   // Global states
@@ -87,6 +26,10 @@ console.log("Preload script is running");
 const electronAPI: ElectronAPI = {
   // System and window operations
   openLink: (url: string) => shell.openExternal(url),
+  toggleVirtualCamera: () => ipcRenderer.invoke("toggle-virtual-camera"),
+  checkVirtualCamera: () => ipcRenderer.invoke("check-virtual-camera"),
+  toggleScreenSharingProtection: (enabled: boolean) =>
+    ipcRenderer.invoke("toggle-screen-sharing-protection", enabled),
   updateContentDimensions: (dimensions: { width: number; height: number }) =>
     ipcRenderer.invoke("update-content-dimensions", dimensions),
   toggleMainWindow: async () => {
@@ -100,7 +43,28 @@ const electronAPI: ElectronAPI = {
       throw error;
     }
   },
+  onWindowFullyShown: (callback: () => void) => {
+    const subscription = () => callback();
+    ipcRenderer.on("window-fully-shown", subscription);
+    return () => {
+      ipcRenderer.removeListener("window-fully-shown", subscription);
+    };
+  },
+  checkScreenshotPermissions: () =>
+    ipcRenderer.invoke("check-screenshot-permissions"),
   openSettingsPortal: () => ipcRenderer.invoke("open-settings-portal"),
+  onShowSettings: (callback: () => void) => {
+    console.log("Registering onShowSettings listener");
+    const subscription = () => {
+      console.log("show-settings-dialog event received");
+      callback();
+    };
+    ipcRenderer.on("show-settings-dialog", subscription);
+    return () => {
+      console.log("Removing onShowSettings listener");
+      ipcRenderer.removeListener("show-settings-dialog", subscription);
+    };
+  },
   getPlatform: async () => {
     try {
       //console.log("Calling get-platform from preload");
@@ -163,18 +127,6 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.on("reset-view", subscription);
     return () => {
       ipcRenderer.removeListener("reset-view", subscription);
-    };
-  },
-  onShowSettings: (callback: () => void) => {
-    console.log("Registering onShowSettings listener");
-    const subscription = () => {
-      console.log("show-settings-dialog event received");
-      callback();
-    };
-    ipcRenderer.on("show-settings-dialog", subscription);
-    return () => {
-      console.log("Removing onShowSettings listener");
-      ipcRenderer.removeListener("show-settings-dialog", subscription);
     };
   },
   onDeleteLastScreenshot: (callback: () => void) => {
@@ -275,18 +227,27 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.removeListener(PROCESSING_EVENTS.RESET, subscription);
     };
   },
+
+  // Utility functions
   setIgnoreMouseEvents: (ignore: boolean, options?: { forward: boolean }) =>
     ipcRenderer.invoke("set-ignore-mouse-events", ignore, options),
+  removeListener: (eventName: string, callback: (...args: any[]) => void) => {
+    ipcRenderer.removeListener(eventName, callback);
+  },
 };
 
 // Expose only specific API functions
 contextBridge.exposeInMainWorld("electronAPI", {
-  // Only expose the onShowSettings function
+  // Only expose required functions
   onShowSettings: electronAPI.onShowSettings,
 
-  // You need to add any other functions your app is currently using:
+  // Note: Need to add any other functions the app may need to use later:
   openLink: electronAPI.openLink,
   openSettingsPortal: electronAPI.openSettingsPortal,
+  checkScreenshotPermissions: electronAPI.checkScreenshotPermissions,
+  toggleScreenSharingProtection: electronAPI.toggleScreenSharingProtection,
+  toggleVirtualCamera: electronAPI.toggleVirtualCamera,
+  checkVirtualCamera: electronAPI.checkVirtualCamera,
   updateContentDimensions: electronAPI.updateContentDimensions,
   toggleMainWindow: electronAPI.toggleMainWindow,
   getPlatform: electronAPI.getPlatform,
@@ -308,6 +269,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   onScreenshotError: electronAPI.onScreenshotError,
   onResetView: electronAPI.onResetView,
   onDeleteLastScreenshot: electronAPI.onDeleteLastScreenshot,
+  onWindowFullyShown: electronAPI.onWindowFullyShown,
   onSolutionStart: electronAPI.onSolutionStart,
   onProblemExtracted: electronAPI.onProblemExtracted,
   onSolutionSuccess: electronAPI.onSolutionSuccess,
@@ -319,6 +281,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   onApiKeyInvalid: electronAPI.onApiKeyInvalid,
   onReset: electronAPI.onReset,
   setIgnoreMouseEvents: electronAPI.setIgnoreMouseEvents,
+  removeListener: electronAPI.removeListener, // Add this line
 });
 
 // Keep the existing electron ipcRenderer exposure
@@ -327,9 +290,7 @@ contextBridge.exposeInMainWorld("electron", {
     on: (channel: string, func: (...args: any[]) => void) => {
       ipcRenderer.on(channel, (event, ...args) => func(...args));
     },
-    removeListener: (channel: string, func: (...args: any[]) => void) => {
-      ipcRenderer.removeListener(channel, (event, ...args) => func(...args));
-    },
+    removeListener: electronAPI.removeListener,
   },
 });
 

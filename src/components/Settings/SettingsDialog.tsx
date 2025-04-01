@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Videocam as VideocamIcon, VideocamOff as VideocamOffIcon } from "@mui/icons-material";
 import {
   Dialog,
   DialogContent,
@@ -41,12 +42,39 @@ export function SettingsDialog({
   const [isLoading, setIsLoading] = useState(false);
   const { showToast } = useToast();
 
+  // State for virtual camera
+  const [virtualCameraActive, setVirtualCameraActive] = useState(false);
+
   // Sync with external open state
   useEffect(() => {
     if (externalOpen !== undefined) {
       setOpen(externalOpen);
     }
   }, [externalOpen]);
+
+  // Check status on load
+  useEffect(() => {
+    const checkCameraStatus = async () => {
+      try {
+        const { active } = await window.electronAPI.checkVirtualCamera();
+        setVirtualCameraActive(active);
+      } catch (error) {
+        console.error("Failed to check virtual camera status:", error);
+      }
+    };
+
+    checkCameraStatus();
+  }, [open]); // Check when dialog opens
+
+  // Add toggle function
+  const handleToggleVirtualCamera = async () => {
+    try {
+      const { active } = await window.electronAPI.toggleVirtualCamera();
+      setVirtualCameraActive(active);
+    } catch (error) {
+      console.error("Failed to toggle virtual camera:", error);
+    }
+  };
 
   // Handle open state changes
   const handleOpenChange = (newOpen: boolean) => {
@@ -375,6 +403,83 @@ export function SettingsDialog({
               >
                 <p className="font-medium text-white text-sm">Ollama (Local)</p>
               </div>
+            </div>
+          </div>
+
+          {/* Virtual Camera Toggle */}
+          <div className="space-y-4 mt-6 pt-4 border-t border-white/10">
+            <label className="text-sm font-medium text-white">
+              Virtual Camera
+            </label>
+            <p className="text-xs text-white/60 -mt-3 mb-2">
+              Create a virtual camera window to use with screen sharing applications
+            </p>
+          
+            <div className="p-3 rounded-lg bg-black/30 border border-white/10">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-sm font-medium text-white">Camera Window</p>
+                  <p className="text-xs text-white/60">
+                    Use with OBS or other virtual camera software
+                  </p>
+                </div>
+                <Button
+                  onClick={handleToggleVirtualCamera}
+                  className={`${
+                    virtualCameraActive
+                      ? "bg-green-600 hover:bg-green-700"
+                      : "bg-white/10 hover:bg-white/20"
+                  } px-4 py-2 rounded-lg transition-colors flex items-center gap-2`}
+                >
+                  {virtualCameraActive ? (
+                    <>
+                      <VideocamIcon fontSize="small" /> Active
+                    </>
+                  ) : (
+                    <>
+                      <VideocamOffIcon fontSize="small" /> Start Camera
+                    </>
+                  )}
+                </Button>
+              </div>
+              
+              {virtualCameraActive ? (
+                <div className="bg-white/5 p-3 rounded-lg">
+                  <p className="text-xs text-white/90 mb-2 font-medium">
+                    ✓ Virtual camera window is active
+                  </p>
+                  <p className="text-xs text-white/70 mb-1">
+                    To use with screen sharing:
+                  </p>
+                  <ol className="list-decimal list-inside text-xs text-white/70 pl-2 space-y-1">
+                    <li>Capture this window with OBS or similar software</li>
+                    <li>Start a virtual camera in that software</li>
+                    <li>Use the virtual camera in your meeting app</li>
+                  </ol>
+                  <div className="mt-3 flex flex-col sm:flex-row gap-2">
+                    <Button
+                      className="bg-white/10 hover:bg-white/20 text-xs px-3 py-1 rounded"
+                      onClick={() => openExternalLink("https://obsproject.com/download")}
+                    >
+                      Download OBS
+                    </Button>
+                    <Button 
+                      className="bg-white/10 hover:bg-white/20 text-xs px-3 py-1 rounded"
+                      onClick={() => window.electronAPI.toggleVirtualCamera()}
+                    >
+                      Restart Camera Window
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white/5 p-3 rounded-lg">
+                  <p className="text-xs text-white/70">
+                    Create a separate window that can be captured by virtual camera software, 
+                    allowing you to show InterviewCoder in your video feed without it appearing 
+                    in your screen share.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 

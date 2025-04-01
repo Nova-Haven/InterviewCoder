@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useToast } from "../../contexts/toast";
 import { Screenshot } from "../../types/screenshots";
 import { LanguageSelector } from "../shared/LanguageSelector";
-import { COMMAND_KEY } from "../../utils/platform";
+import { commandKey } from "../../utils/platform";
 
 export interface SolutionCommandsProps {
   onTooltipVisibilityChange: (visible: boolean, height: number) => void;
@@ -75,7 +75,7 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
             <span className="text-[11px] leading-none">Show/Hide</span>
             <div className="flex gap-1">
               <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
-                {COMMAND_KEY}
+                {commandKey()}
               </button>
               <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
                 B
@@ -108,7 +108,7 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                 </span>
                 <div className="flex gap-1">
                   <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
-                    {COMMAND_KEY}
+                    {commandKey()}
                   </button>
                   <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
                     H
@@ -147,7 +147,7 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                   <span className="text-[11px] leading-none">Debug</span>
                   <div className="flex gap-1">
                     <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
-                      {COMMAND_KEY}
+                      {commandKey()}
                     </button>
                     <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
                       ↵
@@ -177,7 +177,7 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
             <span className="text-[11px] leading-none">Start Over</span>
             <div className="flex gap-1">
               <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
-                {COMMAND_KEY}
+                {commandKey()}
               </button>
               <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
                 R
@@ -258,7 +258,7 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                           <span className="truncate">Toggle Window</span>
                           <div className="flex gap-1 flex-shrink-0">
                             <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
-                              {COMMAND_KEY}
+                              {commandKey()}
                             </span>
                             <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
                               B
@@ -307,7 +307,7 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                               <span className="truncate">Take Screenshot</span>
                               <div className="flex gap-1 flex-shrink-0">
                                 <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
-                                  {COMMAND_KEY}
+                                  {commandKey()}
                                 </span>
                                 <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
                                   H
@@ -355,7 +355,7 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                                 <span className="truncate">Debug</span>
                                 <div className="flex gap-1 flex-shrink-0">
                                   <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
-                                    {COMMAND_KEY}
+                                    {commandKey()}
                                   </span>
                                   <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
                                     ↵
@@ -392,7 +392,7 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
                           <span className="truncate">Start Over</span>
                           <div className="flex gap-1 flex-shrink-0">
                             <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
-                              {COMMAND_KEY}
+                              {commandKey()}
                             </span>
                             <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
                               R

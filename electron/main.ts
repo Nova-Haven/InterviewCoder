@@ -9,7 +9,8 @@ import { configHelper } from "./ConfigHelper";
 import { debounce } from "lodash";
 
 // Constants
-export const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
+export const isDev = process.env.NODE_ENV === "development" && !app.isPackaged;
+//export const isDev = true;
 // Add more detailed logging for window events
 let isLoading = false;
 
@@ -49,7 +50,11 @@ const state = {
     DEBUG_SUCCESS: "debug-success",
     DEBUG_ERROR: "debug-error",
   } as const,
+
+  // Utility
   isDimensionUpdateInProgress: false,
+
+  virtualCameraWindow: null as BrowserWindow | null,
 };
 
 // Add interfaces for helper classes
@@ -101,6 +106,8 @@ export interface IIpcHandlerDeps {
   PROCESSING_EVENTS: typeof state.PROCESSING_EVENTS;
   takeScreenshot: () => Promise<string>;
   getView: () => "queue" | "solutions" | "debug";
+  toggleVirtualCamera: () => { active: boolean };
+  checkVirtualCamera: () => { active: boolean };
   toggleMainWindow: () => void;
   clearQueues: () => void;
   setView: (view: "queue" | "solutions" | "debug") => void;
@@ -155,22 +162,44 @@ function initializeHelpers() {
   } as IShortcutsHelperDeps);
 }
 
-// Auth callback handler
+function createVirtualCameraWindow() {
+  if (state.virtualCameraWindow) {
+    state.virtualCameraWindow.focus();
+    return;
+  }
 
-// Register the code-interview-assist protocol
-if (process.platform === "darwin") {
-  app.setAsDefaultProtocolClient("code-interview-assist");
-} else {
-  app.setAsDefaultProtocolClient("code-interview-assist", process.execPath, [
-    path.resolve(process.argv[1] || ""),
-  ]);
-}
+  state.virtualCameraWindow = new BrowserWindow({
+    width: 1280,
+    height: 720,
+    title: "CodeInterviewAssist Camera View",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+    // Make it look nice for camera view
+    titleBarStyle: "hidden",
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    // Add useful window properties
+    alwaysOnTop: false, // Not on top so it won't interfere with your work
+    hasShadow: false,
+    resizable: true,
+  });
 
-// Handle the protocol. In this case, we choose to show an Error Box.
-if (process.defaultApp && process.argv.length >= 2) {
-  app.setAsDefaultProtocolClient("code-interview-assist", process.execPath, [
-    path.resolve(process.argv[1]),
-  ]);
+  // Load the same content as the main window but with a parameter to indicate camera mode
+  state.virtualCameraWindow.loadURL(
+    isDev
+      ? "http://localhost:54321?mode=camera"
+      : `file://${path.join(__dirname, "../dist/index.html?mode=camera")}`
+  );
+
+  state.virtualCameraWindow.on("closed", () => {
+    state.virtualCameraWindow = null;
+  });
+
+  console.log("Virtual camera window created");
 }
 
 // Force Single Instance Lock
@@ -319,7 +348,8 @@ async function createWindow(): Promise<void> {
     return { action: "allow" };
   });
 
-  // Enhanced screen capture resistance
+  // Apply native Electron API protections for
+  // enhanced screen capture resistance
   state.mainWindow.setContentProtection(true);
 
   state.mainWindow.setVisibleOnAllWorkspaces(true, {
@@ -339,6 +369,76 @@ async function createWindow(): Promise<void> {
 
     // Disable window shadow
     state.mainWindow.setHasShadow(false);
+
+    try {
+      console.log("Applying macOS screen sharing protection measures");
+
+      // 1. First, apply basic window properties
+      state.mainWindow.setBackgroundColor("#00000000");
+      state.mainWindow.setHasShadow(false);
+      state.mainWindow.setSkipTaskbar(true);
+
+      // 2. Apply the most important property for avoiding screen sharing detection
+      state.mainWindow.setVisibleOnAllWorkspaces(false); // Changed from true to false
+
+      // 3. Use the window's contentView to set layer properties (critical for screen sharing protection)
+      const win = state.mainWindow as any;
+
+      // Attempt to set NSWindow properties via Electron private APIs
+      if (win.setSheetOffset) {
+        // If this method exists, we likely have access to other private APIs
+
+        // Set window collection behavior to exclude from window lists
+        if (win._setCollectionBehavior) {
+          // Use specific collection behavior flags that make window invisible to screen sharing
+          // NSWindowCollectionBehaviorStationary (1 << 9)
+          // NSWindowCollectionBehaviorIgnoresCycle (1 << 6)
+          // NSWindowCollectionBehaviorTransient (1 << 7)
+          win._setCollectionBehavior((1 << 9) | (1 << 6) | (1 << 7));
+        }
+
+        // Force the window to be a utility panel which is often ignored by screen sharing
+        if (win._setStyleMask) {
+          // NSUtilityWindowMask = 16
+          win._setStyleMask(16);
+        }
+
+        // Set proper window level that's ignored by screen sharing but still visible
+        // Normal screen recording captures NSScreenSaverWindowLevel (1000) and below
+        // So use a higher level to avoid capture
+        if (win._setWindowLevel) {
+          win._setWindowLevel(2001); // Well above NSScreenSaverWindowLevel
+        } else if (typeof win.setWindowLevel === "function") {
+          win.setWindowLevel("floating", 5); // Max priority floating
+        } else {
+          // Fallback to normal API
+          state.mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
+        }
+      } else {
+        // Standard API fallbacks if private APIs aren't available
+        state.mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
+      }
+
+      // 4. Try to set the surface to be excluded from screen capture
+      //    This is the key for recent macOS versions
+      state.mainWindow.setContentProtection(true);
+
+      // 5. Use a special opacity trick that can help with screen sharing visibility
+      //    Some screen sharing software doesn't capture partially transparent windows
+      state.mainWindow.setOpacity(0.99); // Just barely transparent
+
+      console.log("Successfully applied macOS screen sharing protection");
+    } catch (err) {
+      console.warn(
+        "Error applying advanced macOS screen sharing protection:",
+        err
+      );
+
+      // Fallback to basic protection
+      state.mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
+      state.mainWindow.setHiddenInMissionControl(true);
+      state.mainWindow.setSkipTaskbar(true);
+    }
   }
 
   // Prevent the window from being captured by screen recording
@@ -461,13 +561,24 @@ function hideMainWindow(): void {
     const bounds = state.mainWindow.getBounds();
     state.windowPosition = { x: bounds.x, y: bounds.y };
     state.windowSize = { width: bounds.width, height: bounds.height };
+
+    // Set ignore mouse events first, before hiding
     state.mainWindow.setIgnoreMouseEvents(true, { forward: true });
+
+    // Update window settings
     state.mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
     state.mainWindow.setVisibleOnAllWorkspaces(true, {
       visibleOnFullScreen: true,
     });
+
+    // Fade out then hide
     state.mainWindow.setOpacity(0);
-    state.mainWindow.hide();
+    setTimeout(() => {
+      if (state.mainWindow && !state.mainWindow.isDestroyed()) {
+        state.mainWindow.hide();
+      }
+    }, 50);
+
     state.isWindowVisible = false;
   }
 }
@@ -483,21 +594,49 @@ function showMainWindow(): void {
   }
 
   try {
+    // Important: keep mouse events ignored initially, but don't override renderer process settings
+    // Let the renderer process handle clickable elements
+
+    // Position and show the window
     if (state.windowPosition && state.windowSize) {
       state.mainWindow.setBounds({
         ...state.windowPosition,
         ...state.windowSize,
       });
     }
-    state.mainWindow.setIgnoreMouseEvents(false);
+
+    // Set window properties
     state.mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
     state.mainWindow.setVisibleOnAllWorkspaces(true, {
       visibleOnFullScreen: true,
     });
     state.mainWindow.setContentProtection(true);
+
+    // Show with initial zero opacity
     state.mainWindow.setOpacity(0);
     state.mainWindow.showInactive();
-    state.mainWindow.setOpacity(1);
+
+    // Gradually increase opacity
+    let opacity = 0;
+    const fadeInterval = setInterval(() => {
+      opacity += 0.2;
+      if (opacity >= 1) {
+        clearInterval(fadeInterval);
+        opacity = 1;
+
+        // Signal to the renderer that the window is fully shown
+        if (state.mainWindow && !state.mainWindow.isDestroyed()) {
+          state.mainWindow.webContents.send("window-fully-shown");
+        }
+      }
+
+      if (state.mainWindow && !state.mainWindow.isDestroyed()) {
+        state.mainWindow.setOpacity(opacity);
+      } else {
+        clearInterval(fadeInterval);
+      }
+    }, 20);
+
     state.isWindowVisible = true;
   } catch (error) {
     console.error("Error showing window:", error);
@@ -555,62 +694,60 @@ function moveWindowVertical(updateFn: (y: number) => number): void {
   }
 }
 
-// Window dimension functions
-const setWindowDimensionsInternal = (width: number, height: number): void => {
-  if (!state.mainWindow?.isDestroyed()) {
-    if (state.isDimensionUpdateInProgress) {
-      console.log("Dimension update already in progress, skipping");
-      return;
-    }
-
-    state.isDimensionUpdateInProgress = true;
-
-    // Get current position
-    const [currentX, currentY] = state.mainWindow.getPosition();
-
-    // Get screen dimensions
-    const primaryDisplay = screen.getPrimaryDisplay();
-    const workArea = primaryDisplay.workAreaSize;
-
-    // Calculate maximum dimensions (50% of screen width, 80% of screen height)
-    const maxWidth = Math.floor(workArea.width * 0.5);
-    const maxHeight = Math.floor(workArea.height * 0.8);
-
-    // Ensure minimum dimensions for good UX
-    const finalWidth = Math.max(500, Math.min(width + 32, maxWidth));
-    const finalHeight = Math.max(400, Math.min(height + 32, maxHeight));
-
-    // Only update if dimensions have actually changed
-    const currentBounds = state.mainWindow.getBounds();
-    if (
-      currentBounds.width !== finalWidth ||
-      currentBounds.height !== finalHeight
-    ) {
-      // Apply new dimensions to window
-      state.mainWindow.setBounds({
-        x: Math.min(currentX, workArea.width - finalWidth),
-        y: currentY,
-        width: finalWidth,
-        height: finalHeight,
-      });
-
-      // Update state to reflect new size
-      state.windowSize = { width: finalWidth, height: finalHeight };
-
-      console.log(`Window dimensions updated to ${finalWidth}x${finalHeight}`);
-      setTimeout(() => {
-        state.isDimensionUpdateInProgress = false;
-      }, 100);
-    } else {
-      console.log(
-        `Skipping dimension update (already at ${finalWidth}x${finalHeight})`
-      );
-      state.isDimensionUpdateInProgress = false;
-    }
+// Virtual Camera
+const toggleVirtualCamera = (): { active: boolean } => {
+  if (state.virtualCameraWindow) {
+    state.virtualCameraWindow.close();
+    state.virtualCameraWindow = null;
+    return { active: false };
+  } else {
+    createVirtualCameraWindow();
+    return { active: true };
   }
 };
 
-const setWindowDimensions = debounce(setWindowDimensionsInternal, 300);
+const checkVirtualCamera = (): { active: boolean } => {
+  return { active: state.virtualCameraWindow !== null };
+};
+
+// Window dimension functions
+const setWindowDimensionsInternal = (width: number, height: number): void => {
+  if (!state.mainWindow?.isDestroyed()) {
+    // Seeing as it works when dev-mode is open, then just return without executing anything
+    return;
+
+    // Prevent dimension update if a dialog is open
+    if (state.mainWindow.webContents.isDevToolsOpened()) {
+      console.log("Skipping dimension update while DevTools is open");
+      return;
+    }
+
+    const [currentX, currentY] = state.mainWindow.getPosition();
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const workArea = primaryDisplay.workAreaSize;
+    const maxWidth = Math.floor(workArea.width * 0.5);
+
+    // Store the new dimensions in state
+    state.windowSize = {
+      width: Math.min(width + 32, maxWidth),
+      height: Math.ceil(height),
+    };
+
+    state.mainWindow.setBounds({
+      x: Math.min(currentX, workArea.width - maxWidth),
+      y: currentY,
+      width: state.windowSize.width,
+      height: state.windowSize.height,
+    });
+
+    console.log(
+      `Window dimensions set to: ${state.windowSize.width}x${state.windowSize.height}`
+    );
+  }
+};
+
+// Use a smaller debounce delay for smoother resizing
+const setWindowDimensions = debounce(setWindowDimensionsInternal, 100); // Reduced from 300ms to 100ms
 
 // Initialize application
 async function initializeApp() {
@@ -671,6 +808,8 @@ async function initializeApp() {
         ),
       moveWindowUp: () => moveWindowVertical((y) => y - state.step),
       moveWindowDown: () => moveWindowVertical((y) => y + state.step),
+      toggleVirtualCamera: () => toggleVirtualCamera(),
+      checkVirtualCamera: () => checkVirtualCamera(),
     });
     await createWindow();
     state.shortcutsHelper?.registerGlobalShortcuts();

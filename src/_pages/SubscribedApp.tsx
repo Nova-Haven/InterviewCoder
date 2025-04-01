@@ -48,9 +48,36 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
 
     const updateDimensions = () => {
       if (!containerRef.current) return;
+
+      // Get the actual dimensions of the content
       const height = containerRef.current.scrollHeight || 600;
       const width = containerRef.current.scrollWidth || 800;
-      window.electronAPI?.updateContentDimensions({ width, height });
+
+      // Make sure we account for any open dialogs that might be outside the container
+      const dialogs = document.querySelectorAll(
+        '.dialog-content, [role="dialog"]'
+      );
+      let maxHeight = height;
+      let maxWidth = width;
+
+      // Check each dialog to see if it's larger than our container
+      dialogs.forEach((dialog) => {
+        if (dialog instanceof HTMLElement && dialog.offsetParent !== null) {
+          // Dialog is visible - check its dimensions
+          const dialogHeight = dialog.scrollHeight;
+          const dialogWidth = dialog.scrollWidth;
+
+          // Update max dimensions if dialog is larger
+          maxHeight = Math.max(maxHeight, dialogHeight + 100); // Add padding
+          maxWidth = Math.max(maxWidth, dialogWidth + 100); // Add padding
+        }
+      });
+
+      // Update window dimensions with the larger of container or dialog dimensions
+      window.electronAPI?.updateContentDimensions({
+        width: maxWidth,
+        height: maxHeight,
+      });
     };
 
     // Force initial dimension update immediately
@@ -58,31 +85,55 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
 
     // Set a fallback timer to ensure dimensions are set even if content isn't fully loaded
     const fallbackTimer = setTimeout(() => {
-      window.electronAPI?.updateContentDimensions({ width: 800, height: 600 });
-    }, 500);
+      updateDimensions();
+    }, 300);
 
-    const resizeObserver = new ResizeObserver(updateDimensions);
+    // Create observers to watch for content changes
+    const resizeObserver = new ResizeObserver((entries) => {
+      // Small delay to let animations complete
+      setTimeout(updateDimensions, 50);
+    });
+
     resizeObserver.observe(containerRef.current);
 
-    // Also watch DOM changes
-    const mutationObserver = new MutationObserver(updateDimensions);
-    mutationObserver.observe(containerRef.current, {
+    // Watch the entire document for dialog changes
+    const documentObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (
+          mutation.type === "childList" ||
+          (mutation.type === "attributes" &&
+            mutation.target instanceof HTMLElement &&
+            (mutation.target.classList.contains("dialog-content") ||
+              mutation.target.getAttribute("role") === "dialog"))
+        ) {
+          // Dialog-related changes detected
+          setTimeout(updateDimensions, 50);
+          break;
+        }
+      }
+    });
+
+    documentObserver.observe(document.body, {
       childList: true,
       subtree: true,
       attributes: true,
-      characterData: true,
+      attributeFilter: ["class", "style", "role"],
     });
 
     // Do another update after a delay to catch any late-loading content
-    const delayedUpdate = setTimeout(updateDimensions, 1000);
+    const delayedUpdate = setTimeout(updateDimensions, 500);
+
+    // And another one a bit later for really slow loading content
+    const finalUpdate = setTimeout(updateDimensions, 1000);
 
     return () => {
       resizeObserver.disconnect();
-      mutationObserver.disconnect();
+      documentObserver.disconnect();
       clearTimeout(fallbackTimer);
       clearTimeout(delayedUpdate);
+      clearTimeout(finalUpdate);
     };
-  }, [view]);
+  }, [view]); // Still depend on view changes, but handle other content changes internally
 
   // Listen for events that might switch views or show errors
   useEffect(() => {

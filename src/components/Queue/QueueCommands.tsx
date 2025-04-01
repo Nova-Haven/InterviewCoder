@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 
 import { useToast } from "../../contexts/toast";
 import { LanguageSelector } from "../shared/LanguageSelector";
-import { COMMAND_KEY } from "../../utils/platform";
+import { commandKey } from "../../utils/platform";
 
 interface QueueCommandsProps {
   onTooltipVisibilityChange: (visible: boolean, height: number) => void;
@@ -131,7 +131,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
             </span>
             <div className="flex gap-1">
               <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
-                {COMMAND_KEY}
+                {commandKey()}
               </button>
               <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
                 H
@@ -168,7 +168,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                 <span className="text-[11px] leading-none">Solve </span>
                 <div className="flex gap-1 ml-2">
                   <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
-                    {COMMAND_KEY}
+                    {commandKey()}
                   </button>
                   <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
                     ↵
@@ -249,7 +249,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                           <span className="truncate">Toggle Window</span>
                           <div className="flex gap-1 flex-shrink-0">
                             <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
-                              {COMMAND_KEY}
+                              {commandKey()}
                             </span>
                             <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
                               B
@@ -293,7 +293,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                           <span className="truncate">Take Screenshot</span>
                           <div className="flex gap-1 flex-shrink-0">
                             <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
-                              {COMMAND_KEY}
+                              {commandKey()}
                             </span>
                             <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
                               H
@@ -346,7 +346,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                           <span className="truncate">Solve</span>
                           <div className="flex gap-1 flex-shrink-0">
                             <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
-                              {COMMAND_KEY}
+                              {commandKey()}
                             </span>
                             <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
                               ↵
@@ -400,7 +400,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                           </span>
                           <div className="flex gap-1 flex-shrink-0">
                             <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
-                              {COMMAND_KEY}
+                              {commandKey()}
                             </span>
                             <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
                               L

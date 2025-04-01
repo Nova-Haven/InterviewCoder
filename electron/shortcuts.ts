@@ -113,7 +113,7 @@ export class ShortcutsHelper {
       this.deps.toggleMainWindow();
     });
 
-    globalShortcut.register("CommandOrControl+Q", () => {
+    globalShortcut.register("CommandOrControl+Alt+Q", () => {
       console.log("Command/Ctrl + Q pressed. Quitting application.");
       app.quit();
     });

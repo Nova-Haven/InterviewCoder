@@ -1,6 +1,6 @@
 // ipcHandlers.ts
 
-import { ipcMain, shell } from "electron";
+import { dialog, ipcMain, shell } from "electron";
 import { IIpcHandlerDeps } from "./main";
 import { configHelper } from "./ConfigHelper";
 
@@ -22,6 +22,148 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
     return process.platform;
   });
 
+  // Screenshot permission handler
+  ipcMain.handle("check-screenshot-permissions", async () => {
+    try {
+      if (process.platform === "win32") {
+        console.log("Checking Windows screenshot permissions");
+
+        // Import screenshot-desktop only in main process
+        const screenshot = require("screenshot-desktop");
+
+        // Use a timeout to prevent hanging forever
+        return new Promise((resolve) => {
+          // Set a timeout to avoid hanging forever
+          const timeoutId = setTimeout(() => {
+            console.log("Screenshot permission check timed out");
+            resolve({
+              success: false,
+              error: "Permission check timed out",
+            });
+          }, 5000); // 5 second timeout
+
+          try {
+            screenshot({ format: "png" }, (error: any, img: any) => {
+              // Clear timeout since we got a response
+              clearTimeout(timeoutId);
+
+              if (error) {
+                console.error("Windows screenshot permission issue:", error);
+
+                // Show dialog from main process
+                dialog.showMessageBox({
+                  type: "warning",
+                  title: "Screenshot Permission",
+                  message:
+                    "InterviewCoder needs permission to capture screenshots.",
+                  detail:
+                    "Please ensure that screen recording permissions are enabled for this application.",
+                  buttons: ["OK"],
+                });
+
+                resolve({ success: false, error: error.toString() });
+              } else {
+                console.log("Windows screenshot permissions are granted");
+                resolve({ success: true });
+              }
+            });
+          } catch (innerError) {
+            // Clear timeout
+            clearTimeout(timeoutId);
+            console.error("Error in screenshot test:", innerError);
+            resolve({
+              success: false,
+              error: innerError.toString(),
+            });
+          }
+        });
+      }
+
+      // For non-Windows platforms, assume success
+      return { success: true };
+    } catch (error: any) {
+      console.error("Error checking screenshot permissions:", error);
+      return {
+        success: false,
+        error: error?.toString() || "Unknown error checking permissions",
+      };
+    }
+  });
+
+  // Screen sharing protection toggle
+  ipcMain.handle(
+    "toggle-screen-sharing-protection",
+    (_event, enabled: boolean) => {
+      const win = deps.getMainWindow();
+      if (!win || win.isDestroyed()) return { success: false };
+
+      if (process.platform === "darwin") {
+        try {
+          console.log(
+            `${enabled ? "Enabling" : "Disabling"} screen sharing protection`
+          );
+
+          // The most important properties for screen sharing protection:
+
+          // 1. Content protection is the main defense
+          win.setContentProtection(enabled);
+
+          // 2. Visible on all workspaces affects screen sharing visibility
+          // When false, it's harder to detect in screen sharing
+          win.setVisibleOnAllWorkspaces(!enabled);
+
+          // 3. Try private APIs if available
+          const browserWin = win as any;
+
+          if (browserWin._setCollectionBehavior) {
+            if (enabled) {
+              // Use behavior flags that hide from screen sharing
+              browserWin._setCollectionBehavior((1 << 9) | (1 << 6) | (1 << 7));
+            } else {
+              // Use normal behavior flags
+              browserWin._setCollectionBehavior(0);
+            }
+          }
+
+          if (browserWin._setWindowLevel) {
+            if (enabled) {
+              // Use a level that's ignored by screen sharing
+              browserWin._setWindowLevel(2001);
+            } else {
+              // Use normal level
+              browserWin._setWindowLevel(0);
+            }
+          }
+
+          // 4. Set opacity to just under 1.0 which can help with some screen sharing software
+          if (enabled) {
+            win.setOpacity(0.99);
+          }
+
+          return { success: true };
+        } catch (err) {
+          console.warn("Error toggling screen sharing protection:", err);
+          return { success: false, error: err.toString() };
+        }
+      }
+
+      return { success: true };
+    }
+  );
+
+  // Virtual Camera toggle
+  ipcMain.handle("toggle-virtual-camera", () => {
+    // Call the method from deps instead of directly accessing the window
+    return deps.toggleVirtualCamera();
+  });
+  
+  // Also add this handler
+  ipcMain.handle("check-virtual-camera", () => {
+    // Call the method from deps
+    return deps.checkVirtualCamera();
+  });
+
+  // Provider handlers
   ipcMain.handle("check-api-key", () => {
     return configHelper.hasApiKey();
   });
@@ -31,11 +173,11 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
     if (!configHelper.isValidApiKeyFormat(apiKey)) {
       return {
         valid: false,
-        error: "Invalid API key format. OpenAI API keys start with 'sk-'",
+        error: "Invalid API key format.",
       };
     }
 
-    // Then test the API key with OpenAI
+    // Then test the API key
     const result = await configHelper.testApiKey(apiKey);
     return result;
   });

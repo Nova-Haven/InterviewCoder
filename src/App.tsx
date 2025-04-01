@@ -11,6 +11,7 @@ import {
 import { ToastContext } from "./contexts/toast";
 import { WelcomeScreen } from "./components/WelcomeScreen";
 import { SettingsDialog } from "./components/Settings/SettingsDialog";
+import { isMacOS, isWindows } from "./utils/platform";
 
 // Create a React Query client
 const queryClient = new QueryClient({
@@ -82,6 +83,18 @@ function App() {
       }
     };
 
+    const windowShownListener = window.electronAPI.onWindowFullyShown(() => {
+      // Reset the click-through behavior when window is shown
+      window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
+
+      // Apply the hover detection system after a short delay
+      setTimeout(() => {
+        // This helps ensure the window is fully rendered before enabling hover detection
+        document.addEventListener("mouseover", handlePointerEvents);
+        document.addEventListener("mouseout", handlePointerEvents);
+      }, 100);
+    });
+
     // Add event listeners
     document.addEventListener("mouseover", handlePointerEvents);
     document.addEventListener("mouseout", handlePointerEvents);
@@ -91,6 +104,7 @@ function App() {
       document.removeEventListener("mouseover", handlePointerEvents);
       document.removeEventListener("mouseout", handlePointerEvents);
       window.electronAPI.setIgnoreMouseEvents(false);
+      windowShownListener(); // Clean up the event listener
     };
   }, []);
 
@@ -178,6 +192,51 @@ function App() {
       return () => clearTimeout(timer);
     }
   }, [isInitialized]);
+
+  useEffect(() => {
+    // Check screenshot permissions if on Windows
+    const checkScreenshotPermissions = async () => {
+      if (isWindows()) {
+        try {
+          console.log("Checking Windows screenshot permissions...");
+          // Call main process via IPC
+          const result = await window.electronAPI.checkScreenshotPermissions();
+          if (!result.success) {
+            showToast(
+              "Screenshot Permission",
+              "Please ensure screen recording permissions are enabled.",
+              "error"
+            );
+          }
+        } catch (error) {
+          console.error("Error checking permissions:", error);
+        }
+      }
+    };
+
+    if (isInitialized) {
+      checkScreenshotPermissions();
+    }
+  }, [isInitialized, showToast]);
+
+  useEffect(() => {
+    // Always enable screen sharing protection when the app starts
+    const enableProtection = async () => {
+      try {
+        // Only apply on macOS
+        if (isMacOS()) {
+          await window.electronAPI.toggleScreenSharingProtection(true);
+          console.log("Screen sharing protection enabled");
+        }
+      } catch (error) {
+        console.error("Failed to enable screen sharing protection:", error);
+      }
+    };
+
+    enableProtection();
+
+    // Cleanup isn't needed as we want to stay protected
+  }, []);
 
   // Listen for settings dialog open requests
   useEffect(() => {

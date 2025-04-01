@@ -1,6 +1,6 @@
 // Solutions.tsx
 import React, { useState, useEffect, useRef } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { dracula } from "react-syntax-highlighter/dist/esm/styles/prism";
 
@@ -10,7 +10,7 @@ import { ProblemStatementData } from "../types/solutions";
 import SolutionCommands from "../components/Solutions/SolutionCommands";
 import Debug from "./Debug";
 import { useToast } from "../contexts/toast";
-import { COMMAND_KEY } from "../utils/platform";
+import { commandKey } from "../utils/platform";
 
 export const ContentSection = ({
   title,
@@ -486,8 +486,8 @@ const Solutions: React.FC<SolutionsProps> = ({
             />
 
             {/* Main Content - Modified width constraints */}
-            <div className="w-full text-sm text-black bg-black/60 rounded-md">
-              <div className="rounded-lg overflow-hidden">
+            <div className="w-full text-sm text-black bg-black/60 rounded-md flex-grow">
+              <div className="rounded-lg h-full overflow-auto">
                 <div className="px-4 py-3 space-y-4 max-w-full">
                   {!solutionData && (
                     <>
@@ -509,7 +509,7 @@ const Solutions: React.FC<SolutionsProps> = ({
                   {solutionData && (
                     <>
                       <ContentSection
-                        title={`My Thoughts (${COMMAND_KEY} + Arrow keys to scroll)`}
+                        title={`My Thoughts (${commandKey} + Arrow keys to scroll)`}
                         content={
                           thoughtsData && (
                             <div className="space-y-3">

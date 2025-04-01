@@ -96,9 +96,27 @@ export class ScreenshotHelper {
         fs.mkdirSync(tempDir, { recursive: true });
       }
 
-      // Use screenshot-desktop for cross-platform support
-      const buffer = await screenshot({ format: "png" });
-      return buffer;
+      // Use screenshot-desktop with platform-specific options
+      if (process.platform === "win32") {
+        // On Windows, specify the format explicitly and use a different method
+        console.log("Taking screenshot on Windows...");
+        return new Promise((resolve, reject) => {
+          screenshot({ format: "png" })
+            .then((img: Buffer) => {
+              console.log("Windows screenshot captured successfully");
+              resolve(img);
+            })
+            .catch((error) => {
+              console.error("Windows screenshot error:", error);
+              reject(error);
+            });
+        });
+      } else {
+        // Default method for macOS and Linux
+        console.log(`Taking screenshot on ${process.platform}...`);
+        const buffer = await screenshot({ format: "png" });
+        return buffer;
+      }
     } catch (error) {
       console.error("Error capturing screenshot:", error);
       throw error;
